@@ -73,9 +73,10 @@ git rev-parse HEAD
 
 Expected HEAD: `7ea37012a0e321f4842579dcff8d3867e3f94ef5`.
 This is the reviewed implementation commit, **not a tag or published release**.
-At this pre-release stage `main` contains bootstrap only until the implementation
-PR merges; cloning `main` and immediately installing will not work. If the commit
-cannot be fetched, stop and verify repository access/history. Never substitute an
+The implementation and documentation are integrated into `main`; the pinned
+revision remains the originally reviewed deployment source, not an automatic
+upgrade to whatever is newest. If it cannot be fetched, stop and verify repository
+access/history. Never substitute an
 unreviewed branch to get past the error. For a future release, follow its actual
 published pin and review its changes; no release tag is invented here.
 
