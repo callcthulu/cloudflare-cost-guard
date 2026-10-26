@@ -58,3 +58,9 @@ Maintainers review changes before merging. Follow the
 [code of conduct](CODE_OF_CONDUCT.md). Only contribute material you have the right
 to license under the repository's existing [MIT license](LICENSE); contributions
 are made under that license. No separate CLA or mandatory DCO process is specified.
+
+The prepared [public branch policy](docs/governance.md) requires PRs and resolved
+threads, blocks default-branch force pushes/deletion and provides no routine bypass.
+It is not active until the owner explicitly launches and verifies it. The solo
+profile requires zero GitHub approvals so an owner's PR is not stranded; manual
+independent review remains a maintainer gate, not enforced human approval or CI.

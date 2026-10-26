@@ -3,6 +3,12 @@
 Official contracts checked 2026-10-26. This describes implemented offline adapters;
 account access, actual latency and live endpoint containment remain unverified.
 
+Cloudflare also offers [native budget alerts](https://developers.cloudflare.com/billing/manage/budget-alerts/)
+for eligible Pay-as-you-go accounts; these notify rather than cap usage. See
+[the launch plan](launch-plan.md) for current positioning alongside native controls.
+This utility is an additional local usage/subscription view, not proof of a complete
+bill or a substitute for evaluating native controls. No billing settings are changed.
+
 | Source | Implemented evidence | Limits and failure behavior |
 | --- | --- | --- |
 | Workers GraphQL | `sum.requests`, one account aggregate and distinct script breakdowns | Five disjoint one-minute partitions covering the previous five completed minutes. Adaptive analytics; sampling status is unknown, so every value is approximate and cannot authorize containment. No monthly total. |
