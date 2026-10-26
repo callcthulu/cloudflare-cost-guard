@@ -6,17 +6,16 @@ only `observe` mode without executor credential references.
 
 ## Administrator installation
 
-From a root-owned checkout below protected parent directories:
+Use the canonical [getting-started guide](getting-started.md) for source review,
+administrator-owned source, token provisioning, installation and first reports.
+Use the [runbook](runbook.md) for updates, notifications and explicit scheduling.
+These instructions also explain why ordinary users must run installed commands
+with both working directory and interpreter inside the dedicated service identity.
+
+Installed unit syntax can be checked without starting the timer:
 
 ```sh
-sudo python3 deploy/install.py prepare
-# Provision each configured read token separately; never put its value in argv.
-sudo install -o root -g cloudflare-cost-guard -m 0640 /root/read.token \
-  /etc/cloudflare-cost-guard/secrets/account-read.token
-sudo python3 deploy/install.py install --config /root/approved-config.json
-sudo systemd-analyze verify /etc/systemd/system/cloudflare-cost-guard.{service,timer}
-# Explicit owner decision after validating config/target IDs:
-sudo systemctl enable --now cloudflare-cost-guard.timer
+sudo systemd-analyze verify /etc/systemd/system/cloudflare-cost-guard.service /etc/systemd/system/cloudflare-cost-guard.timer
 ```
 
 The source JSON must reference the destination token path and
@@ -42,11 +41,8 @@ unit; the application additionally rejects simultaneous direct CLI invocations.
 Collection incidents and undelivered alerts retain nonzero exit status and may
 show a failed service; the timer keeps scheduling subsequent checks.
 
-For removal, use the reviewed checkout's installer:
-
-```sh
-sudo python3 deploy/install.py uninstall
-```
+For removal, follow the [runbook's rollback/uninstall procedure](runbook.md#rollback-and-uninstall)
+from the reviewed root-controlled source snapshot.
 
 This stops/disables the exact application timer, stops its service, verifies
 ownership/hashes, and removes tracked code/config/unit files. State, latches,
@@ -61,7 +57,7 @@ the exact application paths and systemd drop-ins. Use a fresh expendable VM or
 WSL2 distribution with systemd PID 1. No real credentials are needed or allowed.
 
 ```sh
-sudo env CFGUARD_DISPOSABLE=1 python3 tests/linux_lifecycle.py
+sudo sh -c 'umask 022; exec env CFGUARD_DISPOSABLE=1 python3 tests/linux_lifecycle.py'
 python3 -m unittest discover -s tests -v
 ```
 
