@@ -1,0 +1,97 @@
+# Provider capabilities
+
+Official contracts checked 2026-10-26. This describes implemented offline adapters;
+account access, actual latency and live endpoint containment remain unverified.
+
+| Source | Implemented evidence | Limits and failure behavior |
+| --- | --- | --- |
+| Workers GraphQL | `sum.requests`, one account aggregate and distinct script breakdowns | Five disjoint one-minute partitions covering the previous five completed minutes. Adaptive analytics; sampling status is unknown, so every value is approximate and cannot authorize containment. No monthly total. |
+| Workers CPU | None | The documented tutorial exposes CPU quantiles. No conversion of quantiles into a total; `workers.cpu_ms` is unsupported. |
+| Account subscriptions | Separate commitment inventory | Billing Read. Explicit subscription IDs and plan IDs required. Missing price/currency/identity is unknown. Plan IDs, such as `free`, match `expected_subscriptions`. |
+| Configured zone subscriptions | Separate zone commitment inventory | Same contract, queried once per configured zone. This does not discover every zone belonging to the account. |
+| Billable Usage V1 Alpha | Parsed incremental rated rows | Access must be probed. PascalCase contract only. Missing source update heartbeat prevents a complete/fresh total; positive parsed charges can still alert. Empty/denied responses mean unknown. |
+| Other products | Possible subscription/rated rows only | No fast usage adapter or containment. No complete account product inventory is claimed. |
+| Worker public endpoint inventory | Subdomain flags, account custom domains, configured-zone routes, cron schedules | Inbound bindings/queues and routes in other zones are not proven absent. `complete=false` blocks live enforcement. |
+| Subdomain disable | One POST setting both flags false | Explicit executor call only; collection never invokes it. No automatic write retry. Real enforcement remains unsupported without exact triggering evidence and complete inventory. |
+| Public probe | HTTPS GET without credentials | Only `*.workers.dev`, no redirects. A 2xx means reachable; other responses are unknown. Arbitrary Worker-generated 403/404 responses never prove provider cutoff. |
+
+## Contract and pagination details
+
+The [Workers tutorial](https://developers.cloudflare.com/analytics/graphql-api/tutorials/querying-workers-metrics/)
+provides the query fields. [Adaptive sampling](https://developers.cloudflare.com/analytics/graphql-api/sampling/)
+prevents assuming exactness from a low count. Each time partition requests up to
+10,000 rows; reaching that limit rejects the entire observation. Empty partitions,
+out-of-window/missing timestamps, duplicated bucket identities, malformed sums or
+GraphQL errors inside HTTP 200 also produce unknown evidence. Rows are grouped by
+provider timestamp, script name and status. Discovered scripts are evidence only;
+they are never enrolled for modification. Account totals and breakdowns must never
+be added together.
+
+The [subscriptions endpoint](https://developers.cloudflare.com/api/resources/accounts/subresources/subscriptions/methods/get/)
+documents account and zone scopes and optional `result_info`, but no pagination
+query parameters. This adapter accepts the documented unpaginated result, or a
+result whose `total_count` equals the returned count. A larger/ambiguous total
+fails closed as incomplete rather than guessing `page` parameters. The same
+principle applies to [routes](https://developers.cloudflare.com/api/resources/workers/subresources/routes/methods/list/)
+and [custom domains](https://developers.cloudflare.com/api/resources/workers/subresources/domains/methods/list/).
+Consequently an account whose endpoint needs undocumented pagination is not
+fully supported until its actual contract is verified.
+
+The [V1 billing schema](https://developers.cloudflare.com/api/resources/billing/subresources/usage/methods/get_account_usage_v1/)
+documents `ContractedCost` per charge window, `CumulatedContractedCost` per billing
+period and `BillingCurrency`. Only `ContractedCost` becomes an incremental row;
+cumulative costs are not added. Source identity hashes the non-monetary account,
+billing/charge windows, category, service, charge description, units, subscription
+and zone dimensions. Exact duplicates collapse; conflicting costs with the same
+identity invalidate the stream. Missing dimensions invalidate it. There is no
+documented unique line ID: this composite identity must be checked against actual
+account records before relying on reconciliation. No `BillingPeriodEnd`, update
+timestamp or currency is invented. `ChargePeriodEnd` is preserved as charge-window
+coverage, not a provider update heartbeat. V2 is never substituted for V1.
+
+## Transport and credential boundary
+
+API requests use only `https://api.cloudflare.com/client/v4`, verified TLS, disabled
+environment proxies and denied redirects. Default bounds: 10-second request
+timeout, two read attempts, 80 requests/client, 2 MB response body, short bounded
+backoff. The runner also enforces its Linux run deadline. Writes use one attempt;
+timeouts require reconciliation. Raw payloads, headers and tokens never enter
+exception messages. A client binds to one account and one token-file reference.
+
+Tokens are read from bounded regular files, with symlinks/file replacement rejected.
+Linux permits service-owned `0600`, or root-owned `0640` for the current effective
+service group; group/world writable or world-readable files are rejected.
+Administrator ownership of parent directories remains an installation requirement.
+Windows does not implement POSIX ACL verification; production permission validation
+must run on Linux. Observe installations require no executor credential.
+
+## Read-token setup
+
+Use one custom token per configured account, limited to that exact account and
+explicit zone resources wherever Cloudflare permits that scope. Start with
+**Account > Account Analytics > Read** for GraphQL and **Billing Read** for
+subscription inventory. Review the token summary; do not grant Billing Write,
+DNS Edit, Access Edit or Workers Scripts Edit to an observe token. Use an expiry
+and a stable host-IP restriction if they fit your existing operation.
+
+The [Analytics authentication guide](https://developers.cloudflare.com/analytics/graphql-api/getting-started/authentication/api-token-auth/)
+documents the analytics permission; the subscription endpoint above documents
+Billing Read. V1 billing is Alpha and its current reference does not state a
+complete accepted-permission recipe: probe with the approved read token and
+record denial as unknown. Do not switch to a Global API key or broaden permissions
+to make a test pass. Exact account availability and token scopes remain a live gate.
+
+Observe collection does not need routing/script write permissions. Future separate
+inventory/canary authorization must verify current read permissions for each
+inventory endpoint; executor permissions can be broader than one Worker and are
+not contained by a local allowlist. No executor token is installed initially.
+
+Before enabling any complete rated total, verify the composite source identity
+against provider records and prove non-overlap per source series. Current code
+does not claim that proof: the real rated total stays unknown, with positive
+parsed rows reported as alerts rather than a complete account balance.
+
+The [subdomain API](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/subdomain/)
+documents the only write, and [cron inventory](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/schedules/methods/get/)
+provides one internal-trigger check. Neither API proves that all internal invocations
+or storage charges have stopped.

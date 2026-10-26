@@ -19,4 +19,12 @@ Ruling: the delivered design and implementation plan are the execution brief; no
 | 4 | Fake exact data proves executor, not live metric eligibility. |
 | 5 | Offline release and live deployment gates remain separate. |
 
-Tasks: foundation pending; collection pending; runtime pending; executor pending; independent reviews pending; evidence pending.
+Tasks: foundation complete; collection complete; runtime complete; fake executor complete;
+security review complete; public-reuse review complete; final fresh Linux lifecycle
+complete; evidence packaged in a private draft PR. All live gates remain pending
+authorization and evidence. No main-branch integration or publication performed.
+
+Delegation: one bounded foundation/policy specialist, one collector specialist,
+one disposable-Linux/deployment specialist; foundation specialist continued with
+the narrow executor. Lead integrated state/runner/notifications and regression fixes.
+Separate reviewers examined security/correctness and public reuse/privacy/docs.

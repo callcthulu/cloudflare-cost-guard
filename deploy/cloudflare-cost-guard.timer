@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Cloudflare usage every five minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+AccuracySec=5s
+Unit=cloudflare-cost-guard.service
+
+[Install]
+WantedBy=timers.target
