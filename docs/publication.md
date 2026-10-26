@@ -27,12 +27,13 @@ deployment/enforcement. This checklist is not a security certificate.
 
 ## Owner launch actions — not performed by this change
 
-1. Review/integrate implementation PR #1, then the documentation PR, so the default
-   branch has the complete application/license/docs. The bootstrap is not a release.
+1. Confirm the exact integrated `main` revision: implementation PR #1 and documentation
+   PR #2 are merged, but no versioned release is implied. Recheck later changes.
 2. Review the exact commit/history/artifacts to publish and approve the visibility
    change. Copies may persist: making the repo private again does not recall copies
    or revoke a leaked credential.
-3. Enable ordinary Issues if accepting reports; templates alone do not enable them.
+3. Activate and read back [the prepared branch ruleset](governance.md), then enable
+   ordinary Issues if accepting reports; files/templates alone change no setting.
 4. Enable **private vulnerability reporting** on the public repository, verify
    [Report a vulnerability](https://github.com/callcthulu/cloudflare-cost-guard/security/advisories/new)
    works for an eligible non-maintainer, and ensure maintainers receive notifications.
@@ -45,6 +46,10 @@ deployment/enforcement. This checklist is not a security certificate.
    label the project pre-release and install an explicitly reviewed commit.
 
 ## Separate deployment gates
+
+Use [the launch plan](launch-plan.md) for staged visibility/security setup and
+community positioning. No protections are claimed active while this repository
+remains private on its current plan.
 
 Source readiness proves no real provider probe, deployment, alert receipt, 24-hour
 window or live cutoff. Keep each false/unverified until separately proved on an

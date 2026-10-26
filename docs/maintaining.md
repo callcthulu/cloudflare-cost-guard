@@ -28,9 +28,10 @@ unofficial project claims no affiliation, endorsement or logo rights.
 ## First publication
 
 Follow [the checklist](publication.md). Preparation does not change visibility.
-Currently `main` has the bootstrap and implementation PR #1 remains unmerged.
-Integrate the reviewed implementation first, then the documentation PR; do not tell
-users to install an incomplete default branch or invent a release tag.
+Implementation PR #1 and documentation PR #2 are integrated into `main`, with
+reviewed commit ancestry preserved. Use [the launch plan](launch-plan.md) and
+[branch governance](governance.md) for the separately approved public transition.
+Do not invent a release tag or equate integration with public availability.
 
 At launch, the owner explicitly changes visibility, enables Issues if accepting
 reports, enables/verifies GitHub private vulnerability reporting and reviews content
