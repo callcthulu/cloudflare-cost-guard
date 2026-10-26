@@ -1,0 +1,34 @@
+{
+  "mode": "observe",
+  "state_dir": "/var/lib/cloudflare-cost-guard",
+  "run_timeout_seconds": 240,
+  "heartbeat_max_age_seconds": 660,
+  "accounts": [
+    {
+      "key": "sandbox",
+      "account_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "read_token_file": "/etc/cloudflare-cost-guard/read.token",
+      "billing_day": 1,
+      "billing_period_verified": false,
+      "budget": "0.00",
+      "currency": "USD",
+      "expected_subscriptions": [],
+      "zones": [],
+      "prices": [],
+      "max_data_age_seconds": 900
+    }
+  ],
+  "resources": [
+    {
+      "account_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "product": "workers",
+      "resource_id": "disposable-sample",
+      "name": "Disposable sample",
+      "zones": [],
+      "hostnames": ["disposable-sample.example"],
+      "thresholds": [
+        {"metric": "workers.requests", "limit": "100000", "unit": "requests"}
+      ]
+    }
+  ]
+}

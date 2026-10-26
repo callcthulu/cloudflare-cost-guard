@@ -1,0 +1,24 @@
+# Threat model
+
+Assets: read/executor tokens, private inventory, notification destination, state/latches,
+approved action scope and availability of unrelated resources.
+
+Trusted: system administrator, root-owned installed code/config/manifests and OS/TLS
+trust store. The dedicated service user is not an approval authority. Anyone who can
+write installed code or the action manifest can defeat local policy; provider token
+scope is still the ultimate remote permission boundary.
+
+Untrusted: provider payloads, API errors, analytics quality, network timeouts, public
+endpoint responses, local unprivileged users and notification failures. Treat URLs
+and provider strings as data. Do not execute them or interpolate them into commands.
+
+Defenses: strict identifiers and enrollment, fixed API origin, no redirects, TLS,
+bounded parsing/query/retry budgets, protected secret files, one process lock,
+transactions, exact action manifest/digest, fresh evidence and inventory, prewritten
+intent, read-back and conservative public probes, idempotent outbox.
+
+Residual risks: delayed billing/analytics, unavailable Alpha billing, unsupported
+products and attribution, broad account permissions on executor tokens, concurrent
+provider edits between final check and write, ambiguous probes, service account
+compromise, stopped host and failed notification channel. Independent heartbeat
+monitoring is an operator responsibility; a dead host cannot send its own alarm.

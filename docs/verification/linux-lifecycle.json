@@ -1,0 +1,21 @@
+{
+  "install_twice": "passed",
+  "unit_verify": "passed without diagnostics",
+  "overlap": {
+    "exit": 3,
+    "collector_calls": 1
+  },
+  "running_memory": [
+    "VmHWM:\t   26412 kB",
+    "VmRSS:\t   26412 kB"
+  ],
+  "scheduled_runs": 2,
+  "resource_accounting": [
+    "Result=exit-code",
+    "MemoryPeak=15011840",
+    "CPUUsageNSec=153533000"
+  ],
+  "restart_latch": "persisted across scheduled processes",
+  "secret_restriction_and_logs": "nobody denied; fake token absent from journal",
+  "uninstall": "units/code removed; exact DB, secrets, unrelated backup preserved"
+}
