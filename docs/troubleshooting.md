@@ -82,8 +82,9 @@ and modes. See [getting started](getting-started.md#3-move-approved-source-under
 ## Imports, permissions, locks and deadlines
 
 `No module named cfguard`: use `/usr/bin/python3 -B -m cfguard` from
-`/opt/cloudflare-cost-guard`; no pip installation is required. A bootstrap-only
-`main` checkout is not the implementation; use the verified pin in the guide.
+`/opt/cloudflare-cost-guard`; no pip installation is required. A historical
+bootstrap checkout is not the implementation; current `main` is
+integrated, but deployment still uses the reviewed pin in the guide.
 A different working directory is not fixed by giving the service root access.
 
 `runtime_failure` after running as root: state must be owned by the service user,

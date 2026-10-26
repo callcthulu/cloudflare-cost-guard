@@ -31,9 +31,9 @@ python3 -m unittest discover -s tests -v
 ```
 
 This project is pre-release. While the repository is private, access requires
-authorization. The installation guide
-pins the verified implementation commit; it does not assume bootstrap `main`
-contains the application. Installation never enables the timer. Keep tokens,
+authorization. The installation guide pins the verified implementation commit;
+`main` now includes the integrated application and documentation. Installation
+never enables the timer. Keep tokens,
 actual configuration, notification URLs and private evidence outside Git and chat.
 
 ## Commands and results
@@ -67,7 +67,7 @@ prove none of those live outcomes. See [handoff status](handoff-status.json).
 | Operation and boundaries | [Capabilities](docs/capabilities.md), [enforcement](docs/enforcement.md), [threat model](docs/threat-model.md), [Linux testing](docs/linux-testing.md) |
 | Design and validation | [Design](docs/design.md), [implementation plan](docs/implementation-plan.md), [progress](docs/progress.md), [evidence](docs/evidence.md), [independent reviews](docs/verification/reviews.md) |
 | Contribution and maintenance | [Contributing](CONTRIBUTING.md), [agent instructions](AGENTS.md), [maintaining](docs/maintaining.md), [changelog](CHANGELOG.md) |
-| Community and release | [Support](SUPPORT.md), [code of conduct](CODE_OF_CONDUCT.md), [security reporting](SECURITY.md), [publication checklist](docs/publication.md), [MIT license](LICENSE) |
+| Community and release | [Support](SUPPORT.md), [code of conduct](CODE_OF_CONDUCT.md), [security reporting](SECURITY.md), [publication checklist](docs/publication.md), [launch plan](docs/launch-plan.md), [branch governance](docs/governance.md), [MIT license](LICENSE) |
 
 The [open-source preparation record](docs/publication-readiness.md) separates
 completed repository checks from the owner's remaining launch decisions.
