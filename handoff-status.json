@@ -1,7 +1,7 @@
 {
-  "commit": null,
-  "commit_scope": "Reviewed implementation; final revision recorded after verification",
-  "pull_request": null,
+  "commit": "d9066d207fbe7106dde14a6fa1d95fb815613a2b",
+  "commit_scope": "Reviewed and tested implementation commit; subsequent commits update delivery evidence only",
+  "pull_request": "https://github.com/callcthulu/cloudflare-cost-guard/pull/1",
   "offline_tests_passed": true,
   "independent_review_passed": true,
   "live_read_probe_verified": false,

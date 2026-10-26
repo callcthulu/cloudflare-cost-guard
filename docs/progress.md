@@ -21,7 +21,8 @@ Ruling: the delivered design and implementation plan are the execution brief; no
 
 Tasks: foundation complete; collection complete; runtime complete; fake executor complete;
 security review complete; public-reuse review complete; final fresh Linux lifecycle
-complete; evidence packaging in progress. All live gates remain pending authorization and evidence.
+complete; evidence packaged in a private draft PR. All live gates remain pending
+authorization and evidence. No main-branch integration or publication performed.
 
 Delegation: one bounded foundation/policy specialist, one collector specialist,
 one disposable-Linux/deployment specialist; foundation specialist continued with

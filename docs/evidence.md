@@ -5,6 +5,12 @@ No production host or Cloudflare account was accessed, configured, deployed or
 mutated. No real credentials, private configuration or private notification data
 are included. Live observation and canary results remain unverified.
 
+The private [draft PR](https://github.com/callcthulu/cloudflare-cost-guard/pull/1)
+contains the reviewed implementation and this delivery package. The final
+[release checks](verification/release-checks.json) cover intended repository files,
+documentation/evidence links and heuristic sensitive-pattern scanning. They are
+not a guarantee that arbitrary future user configuration is safe to publish.
+
 ## Offline verification
 
 `python -m unittest discover -s tests -v`: 76 tests, zero failures on Windows
@@ -31,6 +37,8 @@ unit syntax verification, two actual timer activations, process overlap refusal,
 restart latch persistence, secret restriction/redaction, idempotent installation
 and uninstall preserving exact state and unrelated backups. This does not prove
 production host capacity, provider collection, real alert receipt or live cutoff.
+Both temporary Linux distributions were removed after testing; no existing
+distribution or server installation was replaced. Downloaded fixture image removed.
 
 ## Independent reviews
 
