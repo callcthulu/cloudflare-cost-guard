@@ -1,0 +1,41 @@
+[Unit]
+Description=Cloudflare usage and cost guard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=cloudflare-cost-guard
+Group=cloudflare-cost-guard
+WorkingDirectory=/opt/cloudflare-cost-guard
+ExecStart=/usr/bin/python3 -B -m cfguard run --config /etc/cloudflare-cost-guard/config.json
+TimeoutStartSec=240s
+KillMode=control-group
+UMask=0077
+StateDirectory=cloudflare-cost-guard
+StateDirectoryMode=0700
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/var/lib/cloudflare-cost-guard
+MemoryAccounting=true
+CPUAccounting=true
+MemoryMax=128M
+CPUQuota=25%
+Nice=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cloudflare-cost-guard

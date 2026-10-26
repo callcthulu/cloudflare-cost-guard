@@ -1,0 +1,49 @@
+{
+  "commit": null,
+  "commit_scope": "Reviewed implementation; final revision recorded after verification",
+  "pull_request": null,
+  "offline_tests_passed": true,
+  "independent_review_passed": true,
+  "live_read_probe_verified": false,
+  "observe_deployed": false,
+  "scheduled_runs_verified": false,
+  "alert_delivery_verified": false,
+  "observation_window_completed": false,
+  "live_enforcement_verified": false,
+  "evidence": {
+    "offline_tests_passed": "docs/evidence.md#offline-verification",
+    "independent_review_passed": "docs/verification/reviews.md",
+    "live_read_probe_verified": "docs/evidence.md#coverage-and-live-gates",
+    "observe_deployed": "docs/evidence.md#coverage-and-live-gates",
+    "scheduled_runs_verified": "docs/evidence.md#coverage-and-live-gates",
+    "alert_delivery_verified": "docs/evidence.md#coverage-and-live-gates",
+    "observation_window_completed": "docs/evidence.md#coverage-and-live-gates",
+    "live_enforcement_verified": "docs/evidence.md#coverage-and-live-gates"
+  },
+  "source_coverage": {
+    "live_accounts_enrolled": 0,
+    "workers_requests": "offline adapter tested; adaptive approximate five-minute window; live unverified",
+    "workers_cpu_total": "unsupported",
+    "subscriptions": "account and configured-zone adapter tested; live unverified",
+    "rated_v1": "parsed positive rows can alert; complete total and freshness unknown",
+    "other_products": "billing/subscription visibility only; no fast metrics or cutoff",
+    "observed_live_latency_seconds": null,
+    "reference": "docs/capabilities.md"
+  },
+  "limitations": [
+    "Best-effort monitoring is not a hard spending cap.",
+    "No live provider probe, deployment, alert receipt or observation window occurred.",
+    "Real metrics/inventory/probe evidence cannot currently authorize verified containment.",
+    "A stopped host requires an independently hosted health check.",
+    "Publication and production readiness remain separate owner gates."
+  ],
+  "owner_actions": [
+    "Review private draft PR and evidence package.",
+    "Choose explicit account/resource enrollment, budgets and verified billing periods for a separate personal deployment.",
+    "Authorize exact observe installation and notification destination; provision protected read-token files outside chat/Git.",
+    "Verify live API capability, two scheduled observe runs, actual alert receipt and a 24-hour observation window.",
+    "Arrange independent heartbeat monitoring.",
+    "Keep live cutoff disabled until a separate supported-metric/inventory design and approved disposable canary are verified.",
+    "Decide separately whether to publish the repository."
+  ]
+}
