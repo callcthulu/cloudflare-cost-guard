@@ -1,72 +1,159 @@
 # Configuration
 
-Copy `config.example.json` to an administrator-controlled location and replace
-its synthetic IDs. Run `validate` before enabling scheduled collection. The
-example contains no credentials and no executor. Keep actual configuration,
-tokens, notifications and evidence outside Git.
+Use strict JSON in an administrator-controlled file. Keep actual configuration
+outside Git. This is a **complete synthetic observe example** for one account;
+replace its account ID, billing day, budget, expected plan IDs and token path
+after review. It enrolls no Worker and no notification target.
 
-The parser rejects unknown fields, duplicate JSON keys and identities, malformed
-account/zone IDs, cross-account zone references, relative secret paths, numeric
-JSON money and non-finite or negative values. All amounts, allowances and limits
-are decimal **strings**; currencies use explicit three-letter uppercase codes.
-No currency conversion is performed. Provider resource IDs cannot contain URL
-path delimiters. A display name or hostname never becomes a resource identity.
+```json
+{
+  "mode": "observe",
+  "state_dir": "/var/lib/cloudflare-cost-guard",
+  "run_timeout_seconds": 240,
+  "heartbeat_max_age_seconds": 660,
+  "accounts": [
+    {
+      "key": "example-account",
+      "account_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "read_token_file": "/etc/cloudflare-cost-guard/secrets/example-account-read.token",
+      "billing_day": 1,
+      "billing_period_verified": false,
+      "budget": "0.00",
+      "currency": "USD",
+      "expected_subscriptions": [],
+      "zones": [],
+      "prices": [],
+      "max_data_age_seconds": 900
+    }
+  ],
+  "resources": []
+}
+```
 
-On Linux the configuration must be a root-owned regular file without group or
-other write permission. Its parent directories must prevent non-admin replacement
-(standard root-owned sticky directories are permitted). Ownership checks are not
-performed on Windows; use the Linux installation for service security validation.
-The parser validates secret **paths**, without reading secret contents.
+`resources: []` is valid for account/subscription monitoring without per-Worker
+thresholds. The collector still queries account Workers analytics and rated usage;
+there is no switch to disable those sources. Empty `expected_subscriptions` means
+every returned plan is unexpected, including a free plan; fill it with verified
+expected `rate_plan.id` values. `budget: "0.00"` is a local policy threshold,
+not a provider billing restriction.
 
-Each account specifies its ID, read-token file, UTC billing anchor day (1–31),
-budget, currency and enrolled zone IDs. `billing_period_verified` defaults to
-false: set it true only after verifying the actual account billing boundary.
-Days missing from a month clamp to its last day, then return to the original
-anchor next month. For example day 31 produces February 28 to March 31 in a
-non-leap year. Periods are half-open: a row ending at the new period start belongs
-to the old period. `max_data_age_seconds` defaults to 900; data time determines
-freshness, never fetch time.
+## Schema and defaults
 
-`expected_subscriptions` contains expected **rate plan IDs**, such as `free`,
-from `rate_plan.id`; it does not contain each subscription record's random `id`.
-An empty list does not establish that products have no metered charges. Resource
-enrollment is explicit: one `(account_id, product, resource_id)` may have several
-hostnames/zones. Repeating its identity is an error. Discovery never enrolls a
-resource for modification. Each threshold has a metric, limit, unit and optional
-`warning` value no higher than its limit. Metric and unit names must match the
-collector. Initial request metrics use `workers.requests` / `requests`; CPU totals
-remain unsupported unless an aggregate with known semantics is available.
+Unknown fields, duplicate JSON keys/identities, cross-account zone references,
+invalid values and relative secret paths are rejected. Decimal amounts, allowances
+and thresholds are **strings**, not JSON numbers. No currency conversion occurs.
+Account and zone IDs have exactly 32 hexadecimal characters. `key` and `name` are
+local labels; neither selects a provider resource.
 
-For Workers, `resource_id` is the exact deployed **script/service name** used in
-`/accounts/{account_id}/workers/scripts/{script_name}/...`, not a hostname, route,
-display name or deployment-version ID. Request limits currently apply to the
-collector's rolling five completed minutes, not a monthly allowance.
+| Field | Meaning and permitted values |
+| --- | --- |
+| `mode` | `observe` (default) or `enforce`; initial installer accepts observe only. |
+| `accounts` | Required nonempty list. Each account ID and key must be unique. Use a separate read token limited to each account. |
+| `resources` | Optional list, default `[]`; explicit per-resource enrollment only. |
+| `state_dir` | Absolute path, default `/var/lib/cloudflare-cost-guard`; installer requires this exact path. |
+| `run_timeout_seconds` | Integer 1–299, default 240. systemd still imposes 240 seconds; keep this at or below 240. |
+| `heartbeat_max_age_seconds` | Integer 301–86400, default 660. Detects gaps when a later run occurs; cannot detect a stopped host alone. |
+| `notification` | Omitted/null initially. Otherwise external HTTPS `url_file` and optional `max_attempts` 1–10, default 3. |
 
-Prices are optional; missing prices produce an unavailable estimate. A price
-requires `metric`, `unit`, `currency`, `amount`, `per_quantity`, `allowance`,
-`source` and ISO `as_of` date. The allowance is shared once per account/product
-period. Synthetic fixture pricing would be amount `"0.30"`, quantity
-`"1000000"` and allowance `"10000000"`; that is a test input, not live pricing.
-Only a verified complete account billing-period series can use it. Five-minute
-observations and resource subsets cannot stand in for monthly account totals.
+Each account requires `key`, `account_id`, `read_token_file`, `billing_day`,
+`budget` and `currency`. Optional account fields:
 
-Estimates, rated usage and subscription commitments remain separate report
-dimensions. A positive rated charge alerts even below the configured budget.
-Unknown coverage, timestamps, units, currency, duplicate charge identity or price
-produce unknown, never a guessed zero. Approximate/sampled data can warn but
-cannot authorize a cutoff. Trips persist until explicit operator rearm.
+| Field | Meaning |
+| --- | --- |
+| `zones` | Explicit 32-hex zone IDs, default `[]`. A zone cannot belong to two configured accounts. No automatic zone discovery/enrollment. |
+| `expected_subscriptions` | Expected **rate plan IDs** from `rate_plan.id`, not subscription record IDs; default `[]`. Applies to account and configured-zone inventory. |
+| `billing_period_verified` | Boolean, default false; set true only after independently checking the billing anchor. Does not prove source completeness. |
+| `prices` | Default `[]`; verified pricing metadata for estimates, detailed below. |
+| `max_data_age_seconds` | Integer 1–86400, default 900. Uses data timestamps, not just successful fetch time. |
 
-Missing `mode` means `observe`. The sole supported action name is
-`disable_worker_endpoints` for Workers. Configuring that name only permits a
-proposal; the executor independently requires an exact approved manifest,
-executor token, current complete evidence and eligible endpoint inventory.
-Optional resource fields are `permitted_action`, `executor_token_file`,
-`approved_manifest_file` and `approved_manifest_digest` (lowercase SHA-256).
-Install no executor credential for the initial observe deployment.
+`billing_day` is an integer 1–31 interpreted in UTC. Missing days clamp to month
+end, then return to the original anchor: day 31 gives February 28 to March 31 in
+a non-leap year. Billing intervals are half-open; a row ending at the next period
+start belongs to the previous period. Currencies are uppercase three-letter codes;
+the subscription adapter currently requires provider USD rows. Other configured
+currencies cannot be assumed to yield a usable subscription commitment.
 
-Optional notification configuration is `{"url_file": "/etc/cloudflare-cost-guard/notification.url",
-"max_attempts": 3}`. The destination is read from a protected external file;
-the JSON must not contain the URL or any notification secret. Run timeout defaults
-to 240 seconds and must stay below the five-minute interval. Heartbeat maximum
-age defaults to 660 seconds; an independent approved monitor is still needed to
-detect a stopped host.
+## Enroll one Worker
+
+Add this object to `resources` after replacing the synthetic account and exact
+deployed script/service name. Keep the matching account enrolled above.
+
+```json
+{
+  "account_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "product": "workers",
+  "resource_id": "example-worker",
+  "name": "Example Worker",
+  "zones": [],
+  "hostnames": ["example-worker.example.invalid"],
+  "thresholds": [
+    {"metric": "workers.requests", "limit": "100000", "warning": "80000", "unit": "requests"}
+  ]
+}
+```
+
+`resource_id` is the exact name used in
+`/accounts/{account_id}/workers/scripts/{script_name}/...`: not a hostname,
+route, display name or deployment-version ID. Provider adapter identifiers accept
+1–128 letters, digits, underscores or hyphens. Names are case-sensitive. Repeating
+`(account_id, product, resource_id)` is an error. A resource's `zones` must be a
+subset of its account's zones. `hostnames` documents associations; it does not
+configure DNS, routing or remote resources.
+
+Thresholds use `metric`, decimal-string `limit`, `unit`, and optional decimal-string
+`warning` no higher than the limit. Current request metrics are
+`workers.requests` / `requests` for the **rolling five completed minutes**, not
+a monthly allowance. The real adapter marks them approximate and policy emits
+a warning even below the threshold; approximate data never authorizes cutoff.
+Missing activity/empty partitions can yield unknown rather than zero. Configuring
+`workers.cpu_ms` does not add CPU collection: it remains unsupported.
+
+## Estimates and rated charges
+
+A price requires `metric`, `unit`, `currency`, decimal strings `amount`,
+`per_quantity` (>0) and `allowance`, plus provenance `source` and ISO date `as_of`.
+Use verified current contract data, never copied fixture/example rates. An
+allowance applies once per complete account/product billing period. Only a complete
+account billing-period series can produce an estimate; the current five-minute
+Workers adapter cannot. Adding prices or verifying the billing anchor does not
+remove this limitation.
+
+Estimates, rated usage and subscription commitments stay separate. Current rated
+rows lack a provider source-update heartbeat and verified complete ledger coverage,
+so the real rated total stays unknown. A positive parsed rated row may alert below
+the budget while the total remains unknown. Missing units, currency, timestamps,
+prices or coverage never become a guessed zero. Trips persist until explicit rearm.
+
+## Files, notifications and enforcement fields
+
+On Linux, configuration must be a root-owned regular file, not group/world
+writable; parent directories must prevent unprivileged replacement. Secret paths
+are absolute external files. The parser validates paths without reading contents.
+The installer requires root:cloudflare-cost-guard mode `0640` secrets and protected
+ancestors; state is service-owned mode `0700`. Windows checks do not validate
+POSIX ownership, so use Linux for deployment security validation.
+
+For an owner-approved generic HTTPS JSON receiver, add this top-level member:
+
+```json
+{
+  "notification": {
+    "url_file": "/etc/cloudflare-cost-guard/secrets/notification.url",
+    "max_attempts": 3
+  }
+}
+```
+
+Merge this member into the full config; this object is not a standalone config. The URL belongs in the protected
+file, never JSON/Git. `max_attempts` limits due **events per run**; failed events
+retry on later runs. This payload is not a native Slack/Discord message format.
+See [delivery setup](runbook.md#notifications-and-scheduling). Omitting notification
+is safe for a first probe; a later run queues incidents and exits 5 while alerts
+remain pending.
+
+Optional resource enforcement fields are `permitted_action`,
+`executor_token_file`, `approved_manifest_file` and `approved_manifest_digest`
+(lowercase SHA-256). The sole action is `disable_worker_endpoints` for Workers.
+These fields grant no provider permission themselves. Install no executor
+credential initially; real enforcement remains blocked. Read
+[enforcement](enforcement.md) before considering a separately authorized canary.
