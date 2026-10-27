@@ -92,10 +92,10 @@ maximum overshoot is guaranteed. An independent host heartbeat is still needed.
 
 ## Prepare while remaining in observe mode
 
-Start with [getting started](getting-started.md), using a reviewed source revision
-that contains this feature. The older `6bf35c783c7a7380b1243c8f7691122fc91b5b83`
-monitoring pin predates automatic cutoff. A final reviewed feature pin will be
-recorded with its integration; do not substitute a moving branch on a real host.
+Start with [getting started](getting-started.md), using reviewed feature source
+`9c6e16b817e0f3541c8fceb986342dd83d6535f3`. Do not substitute a moving branch on a
+real host. See [delivery evidence](automatic-cutoff-evidence.md) for tests, review
+and unverified live gates. Later guide-only changes leave this runtime pin intact.
 If installed code predates the feature, first upgrade it in observe mode using the
 [reviewed-source update procedure](runbook.md#configuration-updates-upgrades-and-token-rotation).
 

@@ -5,6 +5,11 @@ stateless HTTP Workers. Once armed, `run` can delete the exact Worker with
 `force=false`, or disable only its workers.dev and preview flags. Configuration,
 approval, eligibility and recovery are described in [automatic cutoff](automatic-cutoff.md).
 
+Reviewed implementation commit: `9c6e16b817e0f3541c8fceb986342dd83d6535f3`.
+Subsequent source-pin and evidence documentation changes do not alter runtime,
+tests or installation code. This identifies source availability, not merge or
+production approval.
+
 ## Offline and Linux verification
 
 | Check | Actual result |
