@@ -2,13 +2,14 @@
 import argparse
 import hashlib
 import json
+import os
 import signal
 import sqlite3
 import sys
 import time
 from contextlib import contextmanager
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -125,7 +126,10 @@ def run_once(config, *, now=None, client_factory=None, probe=False, preview=Fals
                 label = account_label(account.account_id)
                 last_fetch = store.get_meta('rated_fetch:' + account.account_id)
                 age = (now - datetime.fromisoformat(last_fetch)).total_seconds() if last_fetch else None
-                fetch_rated = probe or age is None or age < 0 or age >= 3600
+                rated_guard = any(r.key.account_id == account.account_id and r.budget is not None
+                                  and r.budget.source == 'account_rated_observed' for r in config.resources)
+                fetch_rated = probe or rated_guard or age is None or age < 0 or age >= 3600
+                client = None
                 try:
                     client = factory(account.read_token_file)
                     snapshot = client.collect(account, now, include_rated=fetch_rated)
@@ -133,6 +137,11 @@ def run_once(config, *, now=None, client_factory=None, probe=False, preview=Fals
                         snapshot = _rated_snapshot(store, account, snapshot, now, fetch_rated)
                         store.save_snapshot(snapshot)
                     decisions = evaluate(config, snapshot, store.prior())
+                    from .budget import evaluate_budget
+                    decisions += tuple(evaluate_budget(config, resource, snapshot, store, now,
+                                                       persist=not probe and not preview)
+                                       for resource in config.resources
+                                       if resource.key.account_id == account.account_id and resource.budget is not None)
                     decisions += (Decision(ResourceKey(account.account_id, 'account', 'monitor'),
                                            'healthy', 'collection_complete', metric='collection'),)
                 except RunDeadline:
@@ -153,12 +162,33 @@ def run_once(config, *, now=None, client_factory=None, probe=False, preview=Fals
                                    'reason_code': d.reason_code, 'metric': d.metric,
                                    'value': str(d.value) if d.value is not None else None,
                                    'unit': d.unit, 'currency': d.currency} for d in decisions]})
-                if not probe and (config.mode == 'enforce' or preview):
+                if not probe and client is not None and (config.mode == 'enforce' or preview):
+                    from .cutoff import run_budget_cutoff
+                    for resource in config.resources:
+                        if resource.key.account_id != account.account_id or resource.budget is None:
+                            continue
+                        proposed = any(d.key == resource.key and d.metric == 'guard_cost_usd'
+                                       and d.proposed_action for d in decisions)
+                        if not proposed and store.intent(resource.key) is None:
+                            continue
+                        result = run_budget_cutoff(config, resource, snapshot, client, factory, store, now,
+                                                   preview=preview,
+                                                   clock=lambda: now + timedelta(seconds=time.monotonic() - started))
+                        report['actions'].append({'status': result.status, 'attempt_id': result.attempt_id,
+                                                  'resource_ref': resource_label(resource.key),
+                                                  'scope': result.verification.get('scope'),
+                                                  'reason_code': result.verification.get('reason')})
+                        if not preview:
+                            store.enqueue('cutoff:' + (result.attempt_id or resource_label(resource.key)) + ':' + result.status,
+                                          {'reason_code': 'cutoff_result', 'status': result.status,
+                                           'resource_ref': resource_label(resource.key)}, now)
+                        if result.status not in {'worker_deleted', 'endpoints_disabled'} and not preview:
+                            conditions.add(5)
                     from .actions import preflight, execute, reconcile
                     reconciled = set()
                     if not preview:
                         for resource in config.resources:
-                            if resource.key.account_id != account.account_id:
+                            if resource.key.account_id != account.account_id or resource.budget is not None:
                                 continue
                             intent = store.intent(resource.key)
                             if intent and intent['status'] in ('pending', 'partial', 'failed'):
@@ -173,6 +203,8 @@ def run_once(config, *, now=None, client_factory=None, probe=False, preview=Fals
                                     conditions.add(5)
                     for decision in decisions:
                         if not decision.proposed_action or decision.key in reconciled:
+                            continue
+                        if any(r.key == decision.key and r.budget is not None for r in config.resources):
                             continue
                         intent = store.intent(decision.key)
                         if intent and intent['status'] == 'verified_public_cutoff':
@@ -213,14 +245,42 @@ def run_once(config, *, now=None, client_factory=None, probe=False, preview=Fals
     return max(conditions, default=0), report
 
 
+def _prepare_cutoff(config, args):
+    """Write an unarmed template outside the source tree; never invent approval."""
+    from .budget import policy_digest
+    if not args.account_id or not args.resource_id or args.scope != 'resource' or args.output is None:
+        raise ConfigError('prepare-cutoff needs an exact resource and new external output file')
+    key = ResourceKey(args.account_id, 'resource', args.product, args.resource_id)
+    resource = next((r for r in config.resources if r.key == key), None)
+    if resource is None or resource.budget is None or resource.permitted_action is None:
+        raise ConfigError('budget cutoff resource is not enrolled')
+    output = args.output.absolute()
+    if output.is_symlink() or output.resolve().is_relative_to(Path(__file__).resolve().parent.parent):
+        raise ConfigError('approval templates belong outside the source tree')
+    template = {'version': 2, 'approval_reference': 'PENDING_OWNER_APPROVAL',
+                'expires_at': 'REPLACE_WITH_FUTURE_UTC_TIMESTAMP',
+                'resource': {'account_id': key.account_id, 'product': key.product, 'resource_id': key.resource_id},
+                'action': resource.permitted_action,
+                'budget_digest': policy_digest(resource, next(a for a in config.accounts if a.account_id == key.account_id)),
+                'accept_approximate': resource.budget.accept_approximate,
+                'accept_partial': resource.budget.accept_partial,
+                'acknowledge_deletion': False, 'restore_source_confirmed': False,
+                'stateless_worker_confirmed': False}
+    fd = os.open(output, os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+    with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+        handle.write(json.dumps(template, indent=2) + '\n')
+    return {'template_created': True, 'armed': False, 'resource_ref': resource_label(key), 'provider_writes': 0}
+
+
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='Best-effort Cloudflare cost monitor; not a spending cap.')
-    parser.add_argument('command', choices=('validate', 'probe', 'run', 'status', 'rearm', 'enforce-preview'))
+    parser = argparse.ArgumentParser(description='Cloudflare budget guard with explicitly armed Worker cutoffs; not a guaranteed bill cap.')
+    parser.add_argument('command', choices=('validate', 'probe', 'run', 'status', 'rearm', 'enforce-preview', 'prepare-cutoff'))
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--account-id')
     parser.add_argument('--product', default='workers')
     parser.add_argument('--resource-id')
     parser.add_argument('--scope', choices=('account', 'resource'), default='resource')
+    parser.add_argument('--output', type=Path, help='prepare-cutoff only: new approval template outside source')
     parser.add_argument('--show-identities', action='store_true',
                         help='status only: include private local resource mapping; do not share output')
     args = parser.parse_args(argv)
@@ -228,11 +288,15 @@ def main(argv=None):
         config = load_config(args.config)
         if args.show_identities and args.command != 'status':
             raise ConfigError('private mapping is a status-only option')
+        if args.output is not None and args.command != 'prepare-cutoff':
+            raise ConfigError('output is a prepare-cutoff-only option')
         if args.command == 'validate':
             report, code = {'valid': True, 'mode': config.mode, 'accounts': len(config.accounts),
                             'resources': len(config.resources)}, 0
         elif args.command in ('run', 'probe', 'enforce-preview'):
             code, report = run_once(config, probe=args.command == 'probe', preview=args.command == 'enforce-preview')
+        elif args.command == 'prepare-cutoff':
+            report, code = _prepare_cutoff(config, args), 0
         else:
             with RunLock(config.state_dir), Store(config.state_dir) as store:
                 if args.command == 'rearm':

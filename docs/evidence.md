@@ -1,5 +1,9 @@
 # Implementation evidence
 
+Historical initial-delivery snapshot. For the automatic Worker budget cutoff,
+use the [2026-10-27 cutoff evidence](automatic-cutoff-evidence.md). The counts and
+capabilities below describe the original implementation, not the newer feature.
+
 This package describes offline/fake-provider and disposable Linux evidence only.
 No production host or Cloudflare account was accessed, configured, deployed or
 mutated. No real credentials, private configuration or private notification data

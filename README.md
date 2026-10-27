@@ -1,14 +1,20 @@
 # Cloudflare Cost Guard
 
-Self-hosted monitoring for Cloudflare usage, subscriptions and available rated
-charges. Runs on an existing Linux host with Python 3.11+, SQLite and a systemd
-timer. No runtime dependencies to install.
+Self-hosted automatic budget cutoff for explicitly selected stateless Cloudflare
+Workers, with read-only monitoring as the default. Runs on an existing Linux host
+with Python 3.11+, SQLite and a systemd timer. No runtime dependencies to install.
 
-**Best-effort monitoring, not a spending cap.** Observe mode uses read-only tokens
-and makes no provider writes. Missing data stays unknown. Workers requests cover
-an approximate rolling five-minute window; aggregate CPU and complete rated totals
-are unavailable. Real enforcement is currently unsupported. See the
-[capability matrix](docs/capabilities.md) before relying on a report.
+Once armed, the guard automatically deletes the approved Worker (`force=false`)
+or disables its workers.dev/preview flags when the selected USD signal reaches
+`hard_limit_usd`. No approval is requested per incident. Deletion is destructive;
+endpoint disablement covers only those flags. Follow [automatic cutoff](docs/automatic-cutoff.md)
+for supported targets, one-time approval, independent restore source and arming.
+
+**An action trigger, not a guaranteed maximum bill.** Usage cost combines captured
+request counts with a configured CPU planning reserve; CPU is not measured. The
+alternative account-rated signal is a partial observed-charge floor. Missing data
+stays unknown, and collection/action delays can cause overshoot. Read the
+[capabilities](docs/capabilities.md) and guide's verification limits before use.
 
 ## Get started
 
@@ -24,7 +30,8 @@ On Windows, use `python`. Service installation requires Linux with systemd.
 
 Follow [getting started](docs/getting-started.md) to install a reviewed commit,
 create protected read-token files and obtain a first observe report. Installation
-does not start the timer. For delegated setup, use the
+does not start the timer. Optional cutoff requires a separate explicit arming step;
+the initial install remains read-only. For delegated setup, use the
 [agent deployment guide](docs/agent-deployment.md).
 
 ## Use it
@@ -52,6 +59,9 @@ precedence is **5 > 4 > 3 > 0**; inspect JSON as well as the exit code.
 Keep credentials, real configuration and deployment evidence outside Git. The host
 needs its own independent outage monitoring. Offline tests do not prove live
 provider access, notification delivery or a maximum bill.
+
+The [cutoff evidence](docs/automatic-cutoff-evidence.md) records regression tests,
+independent security review and disposable Linux lifecycle verification.
 
 ## Contribute
 

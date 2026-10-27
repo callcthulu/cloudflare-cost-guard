@@ -1,0 +1,44 @@
+{
+  "mode": "observe",
+  "state_dir": "/var/lib/cloudflare-cost-guard",
+  "run_timeout_seconds": 240,
+  "heartbeat_max_age_seconds": 660,
+  "accounts": [
+    {
+      "key": "example-account",
+      "account_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "read_token_file": "/etc/cloudflare-cost-guard/secrets/example-account-read.token",
+      "billing_day": 1,
+      "billing_period_verified": false,
+      "budget": "0.00",
+      "currency": "USD",
+      "expected_subscriptions": [],
+      "zones": [],
+      "prices": [],
+      "max_data_age_seconds": 900
+    }
+  ],
+  "resources": [
+    {
+      "account_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "product": "workers",
+      "resource_id": "disposable-sample",
+      "name": "Disposable stateless HTTP Worker",
+      "zones": [],
+      "hostnames": [],
+      "thresholds": [],
+      "permitted_action": "delete_worker",
+      "budget": {
+        "hard_limit_usd": "10.00",
+        "source": "workers_usage_estimate",
+        "request_usd_per_million": "1.00",
+        "cpu_usd_per_million_ms": "1.00",
+        "cpu_ms_per_request": "1.00",
+        "pricing_source": "SYNTHETIC EXAMPLE ONLY; replace with verified pricing and your CPU planning reserve",
+        "pricing_as_of": "2026-10-27",
+        "accept_approximate": false,
+        "accept_partial": false
+      }
+    }
+  ]
+}

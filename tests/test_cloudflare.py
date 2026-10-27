@@ -38,6 +38,29 @@ class FakeHTTP:
 
 
 class CollectorTests(unittest.TestCase):
+    def test_usage_ledger_buckets_coalesce_statuses_without_overlapping_aggregates(self):
+        def handler(req):
+            if req.full_url.endswith('/graphql'):
+                data = json.loads(self.healthy(req).body)
+                rows = data['data']['viewer']['accounts'][0]['workersInvocationsAdaptive']
+                rows.append({'sum': {'requests': 3}, 'dimensions': {
+                    **rows[0]['dimensions'], 'status': 'exception',
+                    'datetime': (datetime.fromisoformat(rows[0]['dimensions']['datetime']) + timedelta(seconds=10)).isoformat()}})
+                return response(data)
+            return self.healthy(req)
+        snapshot = self.client(handler).collect(self.account, NOW)
+        self.assertEqual(len(snapshot.usage_buckets), 5)
+        self.assertEqual(sum((o.value for o in snapshot.usage_buckets), Decimal(0)), Decimal(25))
+        self.assertTrue(all(o.period_end - o.period_start == timedelta(minutes=1) for o in snapshot.usage_buckets))
+        self.assertTrue(all(o.data_through == o.period_start + timedelta(seconds=10) for o in snapshot.usage_buckets))
+        self.assertTrue(all(o.key.scope == 'resource' and o.sampled is None for o in snapshot.usage_buckets))
+
+    def test_failed_usage_collection_does_not_emit_zero_ledger_buckets(self):
+        snapshot = self.client(lambda req: response({'errors': [{'message': 'synthetic'}]})
+                               if req.full_url.endswith('/graphql') else self.healthy(req)).collect(self.account, NOW)
+        self.assertEqual(snapshot.usage_buckets, ())
+        self.assertIn('unknown', snapshot.coverage['workers.requests'])
+
     def test_json_recursion_error_is_sanitized_without_poisoning_client(self):
         client = self.client(self.healthy)
         path = '/accounts/' + self.account.account_id + '/subscriptions'
