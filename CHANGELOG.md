@@ -5,6 +5,19 @@ production-readiness certification is claimed.
 
 ## [Unreleased]
 
+### Fixed
+
+- Use the singular zone subscription object endpoint while preserving strict
+  completeness checks on account lists.
+- Reconcile duplicate account/zone subscription appearances by owning account and
+  verified provider ID; conflicts leave the commitment total unknown.
+- Parse V1 billing-info coverage explicitly. Uncovered/empty accounts do not become
+  zero balances; missing anchors cannot verify a period. Hourly cache restoration
+  preserves coverage without elevating stale, previous-period or old-format proof.
+
+See the [compatibility delivery](docs/compatibility-delivery.md) for regression
+evidence, independent review and upgrade boundaries.
+
 ### Added
 
 - Python 3.11+ standard-library CLI for configuration validation, capability probes,

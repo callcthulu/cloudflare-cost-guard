@@ -3,6 +3,8 @@
 from dataclasses import replace
 from decimal import Decimal
 from hashlib import sha256
+import json
+import re
 
 from .config import billing_window
 from .models import Decision, ResourceKey
@@ -71,6 +73,48 @@ def _coverage(snapshot, *keys):
     return next((snapshot.coverage[k] for k in keys if k in snapshot.coverage), "unknown")
 
 
+def _subscription_commitment(rows, account, complete):
+    """Reconcile endpoint appearances without discarding their original provenance.
+
+    Only an account + verified provider subscription ID identifies a commitment.
+    A zone endpoint establishes zone attribution; an account-list appearance
+    does not assert that a subscription belongs to the account rather than a zone.
+    """
+    unique, zones, scopes = {}, {}, {}
+    invalid = not complete
+    for row in rows:
+        identifiers = (row.provider_id, row.plan_id)
+        if any(not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value)
+               for value in identifiers):
+            invalid = True
+            continue
+        source = sha256(json.dumps([account.account_id, row.provider_id], separators=(',', ':')).encode()).hexdigest()
+        if (row.source_key != source or row.quality != 'good' or not _amount(row.amount)
+                or row.currency != account.currency or type(row.allowed) is not bool
+                or row.key.product != 'subscriptions' or row.key.scope not in {'account', 'zone'}
+                or row.plan_scope not in (None, 'account', 'zone')):
+            invalid = True
+        previous = unique.get(source)
+        if previous and (previous.amount, previous.currency, previous.plan_id, previous.allowed) != (
+                row.amount, row.currency, row.plan_id, row.allowed):
+            invalid = True
+        unique[source] = row
+        attributed = zones.setdefault(source, set())
+        if row.key.scope == 'zone':
+            attributed.add(row.key.zone_id)
+            if row.key.zone_id not in account.zones:
+                invalid = True
+        declared = scopes.setdefault(source, set())
+        if row.plan_scope is not None:
+            # Invalid values were rejected above; do not hash an untrusted object.
+            if isinstance(row.plan_scope, str):
+                declared.add(row.plan_scope)
+        if len(attributed) > 1 or len(declared) > 1 or attributed and 'account' in declared:
+            invalid = True
+    total = None if invalid else sum((row.amount for row in unique.values()), Decimal('0'))
+    return total, tuple(sorted(unique))
+
+
 def _single(observations):
     unique = []
     for row in observations:
@@ -123,7 +167,10 @@ def evaluate(config, snapshot, prior):
     # No per-resource allowance, reconstruction from a subset, or partial-month
     # extrapolation is permitted.
     estimate, estimate_ids, estimate_reason, approximate = Decimal("0"), [], "good", False
-    if not account.billing_period_verified or _coverage(snapshot, "billing_period") in {"unverified", "unknown"} and "billing_period" in snapshot.coverage:
+    period_verified = account.billing_period_verified and snapshot.coverage.get('billing_period') == 'verified_config'
+    billing_covered = (snapshot.coverage.get('billing_account_coverage') == 'covered'
+                       and snapshot.coverage.get('billing_info') == 'parsed')
+    if not period_verified or not billing_covered:
         estimate_reason = "billing_period_unverified"
     elif not account.prices: estimate_reason = "price_unknown"
     else:
@@ -154,7 +201,7 @@ def evaluate(config, snapshot, prior):
                       currency=account.currency, period_start=start, period_end=end))
 
     rated_coverage = _coverage(snapshot, "rated_usage", "rated")
-    rated = rated_total(snapshot.rated_charges, account.account_id, account.currency, start, end) if rated_coverage == "complete" and account.billing_period_verified else None
+    rated = rated_total(snapshot.rated_charges, account.account_id, account.currency, start, end) if rated_coverage == "complete" and period_verified and billing_covered else None
     rated_status = "unknown" if rated is None else "tripped" if rated > account.budget else "warning" if rated > 0 else "healthy"
     rated_reason = "rated_unknown" if rated is None else "rated_budget_exceeded" if rated > account.budget else "rated_spend" if rated > 0 else "rated_zero"
     emit(Decision(ledger_key, rated_status, rated_reason, evidence_ids=tuple(sorted({r.source_key for r in snapshot.rated_charges if r.key.account_id == account.account_id})),
@@ -174,17 +221,11 @@ def evaluate(config, snapshot, prior):
     subscriptions = [s for s in snapshot.subscriptions if s.key.account_id == account.account_id]
     subscription_coverage = _coverage(snapshot, "subscriptions.account", "subscriptions")
     zone_coverage = all(_coverage(snapshot, "subscriptions.zone:" + z, "subscriptions") == "complete" for z in account.zones)
-    unique = {}
-    invalid = subscription_coverage != "complete" or not zone_coverage
-    for row in subscriptions:
-        if (not row.source_key or row.quality != "good" or not _amount(row.amount)
-                or row.currency != account.currency or row.allowed is None
-                or row.source_key in unique and unique[row.source_key] != row): invalid = True
-        unique[row.source_key] = row
-    commitment = None if invalid else sum((s.amount for s in unique.values()), Decimal("0"))
+    commitment, subscription_ids = _subscription_commitment(
+        subscriptions, account, subscription_coverage == 'complete' and zone_coverage)
     forbidden = any(s.allowed is False and s.quality == "good" for s in subscriptions)
-    status = "tripped" if forbidden else "unknown" if invalid else "healthy"
-    reason = "forbidden_subscription" if forbidden else "subscription_unknown" if invalid else "subscriptions_expected"
-    emit(Decision(ledger_key, status, reason, evidence_ids=tuple(sorted(unique)), metric="subscription_commitment",
+    status = "tripped" if forbidden else "unknown" if commitment is None else "healthy"
+    reason = "forbidden_subscription" if forbidden else "subscription_unknown" if commitment is None else "subscriptions_expected"
+    emit(Decision(ledger_key, status, reason, evidence_ids=subscription_ids, metric="subscription_commitment",
                   value=commitment, unit="currency", currency=account.currency))
     return tuple(decisions)

@@ -1,10 +1,12 @@
 """Offline fixtures follow the linked Cloudflare contracts, never live credentials."""
 import json
+import hashlib
 import os
 import ssl
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
@@ -59,6 +61,10 @@ class CollectorTests(unittest.TestCase):
         path = urlsplit(req.full_url).path
         if path.endswith("/subscriptions"):
             return response(envelope([{"id": "sub-free", "price": 0, "currency": "USD", "rate_plan": {"id": "free", "public_name": "Free"}}]))
+        if path.endswith("/subscription"):
+            return response(envelope({"id": "sub-free", "price": 0, "currency": "USD", "rate_plan": {"id": "free", "public_name": "Free"}}))
+        if path.endswith("/billable-usage/info"):
+            return response(envelope({"covered": True, "subscriptions": []}))
         if path.endswith("/billable-usage"):
             return response(envelope([]))
         variables = json.loads(req.data)["variables"]
@@ -122,6 +128,193 @@ class CollectorTests(unittest.TestCase):
         snapshot = self.client(handler).collect(self.account, NOW)
         self.assertIn("unknown", snapshot.coverage["subscriptions.account"])
 
+    def test_zone_subscription_uses_singular_object_contract(self):
+        snapshot = self.client(self.healthy).collect(self.account, NOW)
+        zone_label = "subscriptions.zone:" + self.account.zones[0]
+        self.assertEqual(snapshot.coverage[zone_label], "complete")
+        paths = [urlsplit(req.full_url).path for req in self.http.calls]
+        self.assertIn("/client/v4/zones/" + self.account.zones[0] + "/subscription", paths)
+        self.assertNotIn("/client/v4/zones/" + self.account.zones[0] + "/subscriptions", paths)
+
+    def test_account_subscription_completeness_is_not_relaxed(self):
+        for result, info in (([], {"total_count": 1}), ({"id": "sub-free"}, None)):
+            with self.subTest(result=result):
+                def handler(req):
+                    if req.full_url.endswith("/subscriptions"):
+                        return response(envelope(result, **({"result_info": info} if info else {})))
+                    return self.healthy(req)
+                snapshot = self.client(handler).collect(self.account, NOW)
+                self.assertIn("unknown", snapshot.coverage["subscriptions.account"])
+                self.assertFalse(any(s.key.scope == "account" for s in snapshot.subscriptions))
+
+    def test_zone_subscription_rejects_malformed_required_fields(self):
+        base = {"id": "sub-free", "price": 0, "currency": "USD", "rate_plan": {"id": "free"}}
+        cases = [None, [], {}, {**base, "price": None}, {**base, "price": -1},
+                 {**base, "currency": None}, {**base, "currency": "EUR"},
+                 {**base, "id": []}, {**base, "id": "bad/id"},
+                 {**base, "rate_plan": None}, {**base, "rate_plan": {"id": []}},
+                 {**base, "rate_plan": {"id": "bad/id"}},
+                 {**base, "rate_plan": {"id": "free", "scope": None}},
+                 {**base, "rate_plan": {"id": "free", "scope": "other"}},
+                 {**base, "rate_plan": {"id": "free", "scope": []}}]
+        for item in cases:
+            with self.subTest(item=item):
+                snapshot = self.client(lambda req: response(envelope(item)) if req.full_url.endswith("/subscription") else self.healthy(req)).collect(self.account, NOW)
+                self.assertIn("unknown", snapshot.coverage["subscriptions.zone:" + self.account.zones[0]])
+                self.assertFalse(any(s.key.scope == "zone" for s in snapshot.subscriptions))
+
+    def test_provider_subscription_identity_is_shared_without_losing_provenance(self):
+        def handler(req):
+            if req.full_url.endswith("/subscription"):
+                return response(envelope({"id": "sub-free", "price": 0, "currency": "USD", "rate_plan": {"id": "free", "scope": "zone", "public_name": "Zone display"}}))
+            return self.healthy(req)
+        snapshot = self.client(handler).collect(self.account, NOW)
+        self.assertEqual(len(snapshot.subscriptions), 2)
+        expected = hashlib.sha256(json.dumps([self.account.account_id, "sub-free"], separators=(",", ":")).encode()).hexdigest()
+        self.assertEqual({s.source_key for s in snapshot.subscriptions}, {expected})
+        self.assertEqual({s.provider_id for s in snapshot.subscriptions}, {"sub-free"})
+        self.assertEqual({s.plan_id for s in snapshot.subscriptions}, {"free"})
+        self.assertEqual({s.key.scope for s in snapshot.subscriptions}, {"account", "zone"})
+        self.assertEqual(next(s for s in snapshot.subscriptions if s.key.scope == "zone").key.zone_id, self.account.zones[0])
+        self.assertEqual(next(s for s in snapshot.subscriptions if s.key.scope == "zone").plan_scope, "zone")
+
+    def test_conflicting_subscription_identity_within_account_is_unknown(self):
+        row = {"id": "same-sub", "price": 0, "currency": "USD", "rate_plan": {"id": "free"}}
+        snapshot = self.client(lambda req: response(envelope([row, {**row, "price": 1}])) if req.full_url.endswith("/subscriptions") else self.healthy(req)).collect(self.account, NOW)
+        self.assertIn("conflicting_subscription", snapshot.coverage["subscriptions.account"])
+
+    def test_uncovered_billing_info_is_unavailable_and_keeps_positive_rated_rows(self):
+        def handler(req):
+            if req.full_url.endswith("/billable-usage/info"):
+                return response(envelope({"covered": False, "subscriptions": []}))
+            if req.full_url.endswith("/billable-usage"):
+                return response(envelope([self.rated_row()]))
+            return self.healthy(req)
+        snapshot = self.client(handler).collect(replace(self.account, billing_period_verified=True), NOW)
+        self.assertEqual(snapshot.coverage["billing_account_coverage"], "unavailable")
+        self.assertEqual(snapshot.coverage["billing_info"], "parsed")
+        self.assertEqual(snapshot.coverage["billing_period"], "unverified")
+        self.assertEqual([row.amount for row in snapshot.rated_charges], [Decimal("0.2")])
+        self.assertIn("unknown", snapshot.coverage["rated_usage"])
+
+    def test_billing_info_unknown_is_sanitized_and_never_config_verified(self):
+        cases = [envelope(None), envelope({}), envelope({"covered": "true", "subscriptions": []}),
+                 envelope({"covered": True, "subscriptions": {}}),
+                 envelope({"covered": True, "subscriptions": [None]}),
+                 envelope({"covered": True, "subscriptions": [{"id": "sub-free"}]}),
+                 {"success": False, "errors": [{"message": "private-provider-detail"}]}]
+        for info in cases:
+            with self.subTest(info=info):
+                snapshot = self.client(lambda req: response(info) if req.full_url.endswith("/billable-usage/info") else self.healthy(req)).collect(replace(self.account, billing_period_verified=True), NOW)
+                self.assertTrue(snapshot.coverage["billing_account_coverage"].startswith("unknown:"))
+                self.assertTrue(snapshot.coverage["billing_info"].startswith("unknown:"))
+                self.assertEqual(snapshot.coverage["billing_period"], "unverified")
+                self.assertNotIn("private-provider-detail", repr(snapshot))
+
+    def test_covered_billing_info_without_boundary_never_verifies_config(self):
+        snapshot = self.client(self.healthy).collect(replace(self.account, billing_period_verified=True), NOW)
+        self.assertEqual(snapshot.coverage["billing_account_coverage"], "covered")
+        self.assertEqual(snapshot.coverage["billing_info"], "parsed")
+        self.assertEqual(snapshot.coverage["billing_period"], "unverified")
+        self.assertIn("empty_rated_response", snapshot.coverage["rated_usage"])
+
+    def billing_info_subscription(self):
+        return {"id": "sub-free", "billing_cycle_anchor_timestamp": "2026-10-01T00:00:00Z", "start_timestamp": "2026-10-01T00:00:00Z"}
+
+    def test_billing_info_active_consistent_anchor_can_confirm_explicit_config(self):
+        info = {"covered": True, "subscriptions": [self.billing_info_subscription()]}
+        for configured in (False, True):
+            with self.subTest(configured=configured):
+                snapshot = self.client(lambda req: response(envelope(info)) if req.full_url.endswith("/billable-usage/info") else self.healthy(req)).collect(replace(self.account, billing_period_verified=configured), NOW)
+                self.assertEqual(snapshot.coverage["billing_info"], "parsed")
+                self.assertEqual(snapshot.coverage["billing_period"], "verified_config" if configured else "unverified")
+                if configured:
+                    self.assertEqual(snapshot.coverage["billing_period_valid_until"], "2026-11-01T00:00:00Z")
+                else:
+                    self.assertNotIn("billing_period_valid_until", snapshot.coverage)
+                self.assertIn("unknown", snapshot.coverage["rated_usage"])
+
+    def test_verified_billing_proof_expires_at_earliest_active_cancellation(self):
+        row = self.billing_info_subscription()
+        info = {"covered": True, "subscriptions": [
+            {**row, "end_timestamp": "2026-12-01T00:00:00Z"},
+            {**row, "id": "ends-soon", "end_timestamp": "2026-10-26T12:30:00Z"},
+            {**row, "id": "ends-later", "end_timestamp": "2026-10-27T00:00:00Z"}]}
+        snapshot = self.client(lambda req: response(envelope(info)) if req.full_url.endswith("/billable-usage/info") else self.healthy(req)).collect(replace(self.account, billing_period_verified=True), NOW)
+        self.assertEqual(snapshot.coverage["billing_period"], "verified_config")
+        self.assertEqual(snapshot.coverage["billing_period_valid_until"], "2026-10-26T12:30:00Z")
+
+    def test_cancellation_exactly_now_does_not_leave_a_verified_proof(self):
+        info = {"covered": True, "subscriptions": [{**self.billing_info_subscription(), "end_timestamp": "2026-10-26T12:00:00Z"}]}
+        snapshot = self.client(lambda req: response(envelope(info)) if req.full_url.endswith("/billable-usage/info") else self.healthy(req)).collect(replace(self.account, billing_period_verified=True), NOW)
+        self.assertEqual(snapshot.coverage["billing_info"], "parsed")
+        self.assertEqual(snapshot.coverage["billing_period"], "unverified")
+        self.assertNotIn("billing_period_valid_until", snapshot.coverage)
+
+    def test_billing_proof_is_rechecked_after_cancellation(self):
+        info = {"covered": True, "subscriptions": [{**self.billing_info_subscription(), "end_timestamp": "2026-10-26T12:30:00Z"}]}
+        client = self.client(lambda req: response(envelope(info)) if req.full_url.endswith("/billable-usage/info") else self.healthy(req))
+        account = replace(self.account, billing_period_verified=True)
+        before = client.collect(account, NOW)
+        self.assertEqual(before.coverage["billing_period_valid_until"], "2026-10-26T12:30:00Z")
+        after = client.collect(account, NOW + timedelta(minutes=30))
+        self.assertEqual(after.coverage["billing_period"], "unverified")
+        self.assertNotIn("billing_period_valid_until", after.coverage)
+
+    def test_billing_proof_expires_before_known_future_metadata_change(self):
+        row = self.billing_info_subscription()
+        info = {"covered": True, "subscriptions": [row,
+            {**row, "id": "future-sub", "start_timestamp": "2026-10-26T12:15:00Z", "billing_cycle_anchor_timestamp": "2026-10-02T00:00:00Z"}]}
+        snapshot = self.client(lambda req: response(envelope(info)) if req.full_url.endswith("/billable-usage/info") else self.healthy(req)).collect(replace(self.account, billing_period_verified=True), NOW)
+        self.assertEqual(snapshot.coverage["billing_period"], "verified_config")
+        self.assertEqual(snapshot.coverage["billing_period_valid_until"], "2026-10-26T12:15:00Z")
+
+    def test_billing_info_ambiguous_or_inactive_anchors_never_confirm_config(self):
+        row = self.billing_info_subscription()
+        cases = [[{**row, "billing_cycle_anchor_timestamp": "2026-10-02T00:00:00Z"}],
+                 [{**row, "billing_cycle_anchor_timestamp": "2026-10-01T00:01:00Z"}],
+                 [{**row, "billing_cycle_anchor_timestamp": "2026-11-01T00:00:00Z"}],
+                 [{**row, "start_timestamp": "2026-11-01T00:00:00Z"}],
+                 [{**row, "end_timestamp": "2026-10-20T00:00:00Z"}],
+                 [row, {**row, "id": "other-sub", "billing_cycle_anchor_timestamp": "2026-09-01T00:00:00Z"}]]
+        for subscriptions in cases:
+            with self.subTest(subscriptions=subscriptions):
+                info = {"covered": True, "subscriptions": subscriptions}
+                snapshot = self.client(lambda req: response(envelope(info)) if req.full_url.endswith("/billable-usage/info") else self.healthy(req)).collect(replace(self.account, billing_period_verified=True), NOW)
+                self.assertEqual(snapshot.coverage["billing_period"], "unverified")
+                self.assertNotIn("billing_period_valid_until", snapshot.coverage)
+
+    def test_invalid_billing_info_subscription_metadata_is_unknown(self):
+        row = self.billing_info_subscription()
+        cases = [{**row, "id": []}, {**row, "billing_cycle_anchor_timestamp": "bad"},
+                 {**row, "start_timestamp": 1}, {**row, "end_timestamp": "bad"},
+                 {**row, "end_timestamp": None},
+                 {**row, "end_timestamp": "2026-09-01T00:00:00Z"}]
+        for subscription in cases:
+            with self.subTest(subscription=subscription):
+                info = {"covered": True, "subscriptions": [subscription]}
+                snapshot = self.client(lambda req: response(envelope(info)) if req.full_url.endswith("/billable-usage/info") else self.healthy(req)).collect(self.account, NOW)
+                self.assertTrue(snapshot.coverage["billing_info"].startswith("unknown:"))
+                self.assertEqual(snapshot.coverage["billing_period"], "unverified")
+
+    def test_denied_billing_info_is_unknown_instead_of_unavailable(self):
+        snapshot = self.client(lambda req: response({"success": False}, status=403) if req.full_url.endswith("/billable-usage/info") else self.healthy(req)).collect(self.account, NOW)
+        self.assertTrue(snapshot.coverage["billing_account_coverage"].startswith("unknown:"))
+        self.assertTrue(snapshot.coverage["billing_info"].startswith("unknown:"))
+
+    def test_later_covered_info_is_observed_without_claiming_rated_completeness(self):
+        covered = False
+        def handler(req):
+            if req.full_url.endswith("/billable-usage/info"):
+                return response(envelope({"covered": covered, "subscriptions": []}))
+            return self.healthy(req)
+        client = self.client(handler)
+        self.assertEqual(client.collect(self.account, NOW).coverage["billing_account_coverage"], "unavailable")
+        covered = True
+        snapshot = client.collect(self.account, NOW + timedelta(hours=1))
+        self.assertEqual(snapshot.coverage["billing_account_coverage"], "covered")
+        self.assertIn("unknown", snapshot.coverage["rated_usage"])
+
     def rated_row(self):
         return {"BillingAccountId": self.account.account_id, "BillingCurrency": "USD", "BillingPeriodStart": "2026-10-01T00:00:00Z", "ChargeCategory": "Usage", "ChargeClass": None,
                 "ChargeDescription": "Workers Standard requests", "ChargePeriodStart": "2026-10-25T00:00:00Z", "ChargePeriodEnd": "2026-10-26T00:00:00Z", "ContractedCost": 0.2,
@@ -172,6 +365,9 @@ class CollectorTests(unittest.TestCase):
         snapshot = self.client(self.healthy).collect(self.account, NOW, include_rated=False)
         self.assertEqual(snapshot.rated_charges, ())
         self.assertEqual(snapshot.coverage["rated_usage"], "not_fetched")
+        self.assertEqual(snapshot.coverage["billing_info"], "not_fetched")
+        self.assertEqual(snapshot.coverage["billing_account_coverage"], "unknown:not_fetched")
+        self.assertEqual(snapshot.coverage["billing_period"], "unverified")
         self.assertFalse(any("billable-usage" in req.full_url for req in self.http.calls))
 
     def test_bound_client_cannot_write_other_account_even_through_request(self):
