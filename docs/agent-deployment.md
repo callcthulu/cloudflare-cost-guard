@@ -1,7 +1,8 @@
 # Deployment with an AI coding agent
 
 Use an agent for a reviewed, explicit deployment, with observe as the initial mode.
-The utility cannot prove a hard cap or authorize real enforcement.
+Optional [automatic Worker cutoff](automatic-cutoff.md) requires separate explicit
+arming; it does not guarantee a maximum invoice.
 
 ## Operator inputs
 
@@ -18,9 +19,11 @@ need a Worker or cutoff target.
 
 ## Copyable prompt
 
-Use the pinned source below, or a later full SHA you have reviewed. Replace the
-bracketed host reference with your approved profile. The prompt does not
-grant live-install or notification permission by itself.
+The pin below is the reviewed monitoring-only source and predates automatic cutoff.
+For cutoff, first review a published feature commit and its guide; do not invent a
+SHA or deploy a moving branch. Replace the bracketed host reference with your
+approved profile. The prompt does not grant live-install or notification permission
+by itself.
 
 ```text
 Prepare Cloudflare Cost Guard for my explicitly enrolled resources.
@@ -49,13 +52,18 @@ heartbeat monitoring and a 24-hour window as separate evidence gates. Do not
 arrange recurring agent work without my request.
 
 Do not change my website, DNS/CDN, Access, billing, subscriptions or existing jobs.
-Keep enforcement disabled: real eligibility is currently unsupported. Any future
-canary/action requires separate resource-specific approval and review.
+Keep this first installation in observe. If I explicitly request automatic cutoff,
+follow docs/automatic-cutoff.md for supported stateless Workers, budget-quality
+acceptance, an unarmed version 2 template, actual owner approval/restore source,
+separate writer and the existing-installation --allow-enforce path. Approval is
+once per pinned policy, not per triggered event. Never invent acknowledgements.
+A live canary or production arming still needs my exact resource/action approval.
 
 Return the source commit, sanitized config summary, test/installation results,
 service/timer state, rollback, coverage/latency, owner actions and a private
-deployment-status JSON. Unknown verification must remain explicitly unverified. Never share raw config,
-credentials, private notification data or status --show-identities output.
+deployment-status JSON. Unknown verification must remain explicitly unverified.
+Never share raw config, credentials, private notification data or
+status --show-identities output.
 Do not claim a hard spending cap.
 ```
 
@@ -70,7 +78,7 @@ Do not claim a hard spending cap.
 | Working notifications | Owner-confirmed receipt; HTTP acceptance/local fixtures are different evidence. |
 | Host outage detectable | Independently hosted check or explicit unresolved limitation. |
 | Stable observation | Recorded 24-hour window, not a timer setting or promise. |
-| Verified public cutoff | Unavailable in the current real adapter; never inferred from fake tests. |
+| Automatic cutoff | Supported armed action/policy and actual provider readback; source tests are not live canary proof or an invoice cap. |
 
 The repository's [handoff status](../handoff-status.json) is the initial development
 snapshot, not your deployment. Store a new private status per installation with

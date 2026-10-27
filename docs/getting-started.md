@@ -2,8 +2,9 @@
 
 This guide gets one reviewed account to a first read-only report. It does not
 buy a Cloudflare plan, deploy a Worker, change DNS or enable enforcement.
-Use an existing host only with its owner's approval. Installation does not publish
-this repository or require publishing your deployment configuration.
+Use an existing host only with its owner's approval. Initial installation is observe
+only. For optional destructive Worker cutoff, follow the separate
+[budget and arming guide](automatic-cutoff.md) after observing and reviewing the target.
 
 ## 1. Check the host and prerequisites
 
@@ -73,9 +74,11 @@ git rev-parse HEAD
 /usr/bin/python3 -B -m unittest discover -s tests -v
 ```
 
-This full SHA pins the reviewed public source, including the subscription and
-billing-info fixes and the portable JSON-error regression test. See the
-[publication checks](publication-status.md). Retain `DELIVERY_COMMIT` for the export below.
+This full SHA pins the reviewed monitoring-only public source, including the
+subscription/billing-info fixes and portable JSON-error regression test. It predates
+the optional automatic-cutoff feature. Use it for observe deployment only until a
+reviewed feature commit is published and pinned. See [publication checks](publication-status.md).
+Retain `DELIVERY_COMMIT` for the export below.
 No separate evidence package or release tag is required. Review any later revision
 before substituting its full SHA. If this commit cannot be fetched, stop and check
 repository history; do not silently fall back to a moving branch.
@@ -247,5 +250,7 @@ is down. Do not enable a timer merely because validation passed.
 
 After those owner decisions, enable observe scheduling using the runbook. Verify
 two actual scheduled processes and retain a 24-hour source-availability record.
-These are live checks, separate from offline tests. Real production containment
-remains blocked; no executor credential belongs in this installation.
+These are live checks, separate from offline tests. No executor credential belongs
+in this initial observe installation. Automatic Worker cutoff has a separate
+[scope, approval and arming procedure](automatic-cutoff.md); source tests do not
+establish a live canary or a guaranteed maximum bill.

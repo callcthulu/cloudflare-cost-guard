@@ -82,7 +82,7 @@ class RunLock:
 
 
 class Store:
-    SCHEMA_VERSION = '3'
+    SCHEMA_VERSION = '4'
 
     def __init__(self, path):
         path = private_directory(path) / 'guard.sqlite3'
@@ -93,7 +93,7 @@ class Store:
         self.db = sqlite3.connect(path, timeout=2, isolation_level=None)
         self.db.row_factory = sqlite3.Row
         meta_exists = self.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='meta'").fetchone()
-        if meta_exists and self.get_meta('schema_version') not in (None, '1', '2', self.SCHEMA_VERSION):
+        if meta_exists and self.get_meta('schema_version') not in (None, '1', '2', '3', self.SCHEMA_VERSION):
             self.db.close()
             raise ValueError('unsupported database schema')
         self.db.execute('PRAGMA journal_mode=DELETE')
@@ -108,9 +108,14 @@ class Store:
             CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, payload TEXT NOT NULL,
                 attempts INTEGER NOT NULL DEFAULT 0, next_at TEXT NOT NULL, delivered INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS intents (key TEXT PRIMARY KEY, payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS budget_ledger (kind TEXT NOT NULL, key TEXT NOT NULL,
+                period TEXT NOT NULL, identity TEXT NOT NULL, payload TEXT NOT NULL,
+                PRIMARY KEY(kind,key,period,identity));
+            CREATE TABLE IF NOT EXISTS intent_history (id INTEGER PRIMARY KEY, key TEXT NOT NULL,
+                payload TEXT NOT NULL, archived_at TEXT NOT NULL);
         ''')
         version = self.get_meta('schema_version')
-        if version not in (None, '1', '2', self.SCHEMA_VERSION):
+        if version not in (None, '1', '2', '3', self.SCHEMA_VERSION):
             self.db.close()
             raise ValueError('unsupported database schema')
         with self.transaction():
@@ -242,6 +247,17 @@ class Store:
         row = self.db.execute('SELECT payload FROM intents WHERE key=?', (key_id(key),)).fetchone()
         return json.loads(row[0]) if row else None
 
+    def note_write_rejection(self, key, status):
+        """Persist only definite authentication rejection, never a retry instruction."""
+        if type(status) is not int or status not in (401, 403):
+            raise ValueError('not a definite authentication rejection')
+        record = self.intent(key)
+        if record is None:
+            raise ValueError('missing action intent')
+        record['writer_rejection'] = status
+        with self.transaction():
+            self.db.execute('UPDATE intents SET payload=? WHERE key=?', (encode(record), key_id(key)))
+
     def finish_intent(self, key, result):
         record = self.intent(key)
         if record is None:
@@ -258,12 +274,31 @@ class Store:
         with self.transaction():
             state = self.prior().get(key, ResourceState())
             intent = self.intent(key)
-            if (state.execution_status in ('pending', 'partial', 'verified_public_cutoff') or
-                    intent and intent['status'] in ('pending', 'partial', 'verified_public_cutoff')):
+            if (state.execution_status in ('pending', 'uncertain', 'partial', 'verified_public_cutoff') or
+                    intent and intent['status'] in ('pending', 'uncertain', 'partial', 'verified_public_cutoff')):
                 raise ValueError('rearm cannot reopen or erase unresolved/completed cutoff; preserve evidence')
+            if intent and intent['status'] in ('worker_deleted', 'endpoints_disabled', 'not_applied'):
+                self.db.execute('INSERT INTO intent_history(key,payload,archived_at) VALUES (?,?,?)',
+                                (key_id(key), encode(intent), datetime.now(timezone.utc).isoformat()))
+                self.db.execute('DELETE FROM intents WHERE key=?', (key_id(key),))
             self.db.execute('INSERT OR REPLACE INTO resources VALUES (?,?)', (key_id(key), encode(ResourceState())))
             self.db.execute('UPDATE incidents SET active=0 WHERE resource_key=? OR id=?',
                             (key_id(key), state.incident_id))
+
+    def intent_history(self, key):
+        return tuple(json.loads(row['payload']) for row in self.db.execute(
+            'SELECT payload FROM intent_history WHERE key=? ORDER BY id', (key_id(key),)))
+
+    def budget_records(self, kind, key, period):
+        return {row['identity']: json.loads(row['payload']) for row in self.db.execute(
+            'SELECT identity,payload FROM budget_ledger WHERE kind=? AND key=? AND period=?',
+            (kind, key_id(key), period.isoformat()))}
+
+    def save_budget_records(self, kind, key, period, records):
+        with self.transaction():
+            for identity, payload in records.items():
+                self.db.execute('INSERT OR REPLACE INTO budget_ledger VALUES (?,?,?,?,?)',
+                                (kind, key_id(key), period.isoformat(), identity, encode(payload)))
 
     def backup(self, destination):
         destination = Path(destination)
@@ -288,7 +323,7 @@ class Store:
             if backup.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
                 raise ValueError('corrupt backup')
             version = backup.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-            if version is None or version[0] != cls.SCHEMA_VERSION:
+            if version is None or version[0] not in ('1', '2', '3', cls.SCHEMA_VERSION):
                 raise ValueError('unsupported backup schema')
             fd = os.open(directory / 'guard.sqlite3', os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
             os.close(fd)

@@ -1,5 +1,9 @@
 # Public repository settings
 
+This is the dated publication receipt. Its original source pin and runtime
+comparison below predate automatic cutoff. See [current cutoff evidence](automatic-cutoff-evidence.md)
+and [getting started](getting-started.md) for the feature's source and validation.
+
 Verified on 2026-10-27 through GitHub API readbacks and actual workflow runs.
 The [repository](https://github.com/callcthulu/cloudflare-cost-guard) is public;
 an HTTPS clone succeeded with credential helpers, injected headers and token

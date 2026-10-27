@@ -9,7 +9,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
-from .models import AccountConfig, Config, Price, ResourceConfig, ResourceKey, Threshold
+from .models import AccountConfig, Config, GuardBudget, Price, ResourceConfig, ResourceKey, Threshold
 
 
 class ConfigError(ValueError):
@@ -99,6 +99,32 @@ def _pairs(pairs):
     return result
 
 
+def _guard_budget(raw, account, mode):
+    fields = {'hard_limit_usd', 'source', 'request_usd_per_million', 'cpu_usd_per_million_ms',
+              'cpu_ms_per_request', 'pricing_source', 'pricing_as_of', 'accept_approximate', 'accept_partial'}
+    _object(raw, fields, {'hard_limit_usd', 'source'})
+    if account.currency != 'USD': raise ConfigError('guard budgets require USD')
+    source = _text(raw['source'])
+    if source not in {'workers_usage_estimate', 'account_rated_observed'}:
+        raise ConfigError('unsupported guard budget source')
+    approximate = _boolean(raw.get('accept_approximate', False))
+    partial = _boolean(raw.get('accept_partial', False))
+    price_fields = {'request_usd_per_million', 'cpu_usd_per_million_ms', 'cpu_ms_per_request', 'pricing_source', 'pricing_as_of'}
+    if source == 'workers_usage_estimate':
+        if price_fields - raw.keys(): raise ConfigError('guard pricing and provenance required')
+        rates = [_decimal(raw[field], True) for field in ('request_usd_per_million', 'cpu_usd_per_million_ms', 'cpu_ms_per_request')]
+        provenance = _text(raw['pricing_source'])
+        as_of = _text(raw['pricing_as_of'])
+        try: date.fromisoformat(as_of)
+        except ValueError: raise ConfigError('guard price date required') from None
+        if mode == 'enforce' and not approximate: raise ConfigError('approximate budget acceptance required')
+    else:
+        if price_fields & raw.keys(): raise ConfigError('rated budgets cannot include usage pricing')
+        rates, provenance, as_of = [Decimal('0')] * 3, '', ''
+    if mode == 'enforce' and not partial: raise ConfigError('partial budget acceptance required')
+    return GuardBudget(_decimal(raw['hard_limit_usd'], True), source, *rates, provenance, as_of, approximate, partial)
+
+
 def validate_admin_file(path: Path):
     """Linux policy: root-owned regular file, protected from non-admin replacement."""
     if os.name != "posix": return
@@ -153,7 +179,7 @@ def load_config(path: Path) -> Config:
     resources = []
     if not isinstance(raw.get("resources", []), list): raise ConfigError("resources must be a list")
     for r in raw.get("resources", []):
-        _object(r, {"account_id", "product", "resource_id", "name", "zones", "hostnames", "thresholds", "permitted_action", "executor_token_file", "approved_manifest_file", "approved_manifest_digest"}, {"account_id", "product", "resource_id", "name"})
+        _object(r, {"account_id", "product", "resource_id", "name", "zones", "hostnames", "thresholds", "permitted_action", "executor_token_file", "approved_manifest_file", "approved_manifest_digest", "budget"}, {"account_id", "product", "resource_id", "name"})
         key = ResourceKey(_provider_id(r["account_id"]), "resource", _resource_id(r["product"]), _resource_id(r["resource_id"]))
         if key.account_id not in account_map: raise ConfigError("resource account is not enrolled")
         zones = _strings(r.get("zones", []))
@@ -168,14 +194,21 @@ def load_config(path: Path) -> Config:
             thresholds.append(Threshold(_text(t["metric"]), limit, _text(t["unit"]), warning))
         if len({t.metric for t in thresholds}) != len(thresholds): raise ConfigError("duplicate threshold metric")
         action = r.get("permitted_action")
-        if action is not None and (action != "disable_worker_endpoints" or key.product != "workers"):
+        if action is not None and (action not in {"disable_worker_endpoints", "delete_worker"} or key.product != "workers"):
             raise ConfigError("unsupported permitted action")
+        budget = _guard_budget(r['budget'], account_map[key.account_id], mode) if 'budget' in r else None
+        if budget is not None and key.product != 'workers': raise ConfigError('unsupported guard budget product')
+        if action == 'delete_worker' and budget is None: raise ConfigError('deletion requires an explicit guard budget')
         digest = r.get("approved_manifest_digest")
         if digest is not None and (not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)):
             raise ConfigError("invalid approval digest")
+        executor = _path(r['executor_token_file']) if r.get('executor_token_file') is not None else None
+        manifest = _path(r['approved_manifest_file']) if r.get('approved_manifest_file') is not None else None
+        if mode == 'enforce' and (action is None or executor is None or manifest is None or digest is None
+                                  or executor == account_map[key.account_id].read_token_file):
+            raise ConfigError('enforcement requires action, separate writer and pinned approval')
         resources.append(ResourceConfig(key, _text(r["name"]), zones, _strings(r.get("hostnames", [])), tuple(thresholds), action,
-            _path(r["executor_token_file"]) if r.get("executor_token_file") is not None else None,
-            _path(r["approved_manifest_file"]) if r.get("approved_manifest_file") is not None else None, digest))
+            executor, manifest, digest, budget))
     if len({r.key for r in resources}) != len(resources): raise ConfigError("duplicate resource identity")
     notification = raw.get("notification")
     if notification is not None:

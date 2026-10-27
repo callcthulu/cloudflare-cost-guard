@@ -104,7 +104,8 @@ Thresholds use `metric`, decimal-string `limit`, `unit`, and optional decimal-st
 `warning` no higher than the limit. Current request metrics are
 `workers.requests` / `requests` for the **rolling five completed minutes**, not
 a monthly allowance. The real adapter marks them approximate and policy emits
-a warning even below the threshold; approximate data never authorizes cutoff.
+a warning even below the threshold. The legacy raw-threshold action cannot use
+approximate data. A separately approved budget signal can explicitly accept it.
 Missing activity/empty partitions can yield unknown rather than zero. Configuring
 `workers.cpu_ms` does not add CPU collection: it remains unsupported.
 
@@ -153,7 +154,40 @@ remain pending.
 
 Optional resource enforcement fields are `permitted_action`,
 `executor_token_file`, `approved_manifest_file` and `approved_manifest_digest`
-(lowercase SHA-256). The sole action is `disable_worker_endpoints` for Workers.
-These fields grant no provider permission themselves. Install no executor
-credential initially; real enforcement remains blocked. Read
-[enforcement](enforcement.md) before considering a separately authorized canary.
+(lowercase SHA-256). Actions are `delete_worker` or `disable_worker_endpoints`,
+only for explicitly enrolled Workers. Deletion always requires a resource budget.
+Enforce mode requires an action, a separate writer path and pinned approval for
+each resource. Initial installation stays observe-only with no writer references.
+These fields alone do not establish owner approval or provider permissions.
+
+## Automatic cutoff budget
+
+A resource may have a `budget` object. This is distinct from the account's alert
+`budget` amount. Start with [the synthetic observe example](../config.cutoff.example.json)
+and follow [automatic cutoff](automatic-cutoff.md) for scope, approval and arming.
+The example's prices are synthetic, its acceptance flags are false, and it contains
+no writer or approval references.
+
+| Budget field | Meaning |
+| --- | --- |
+| `hard_limit_usd` | Positive Decimal string; trigger for the approved action, not a maximum invoice. Account currency must be USD. |
+| `source` | `workers_usage_estimate` or `account_rated_observed`. |
+| `request_usd_per_million` | Positive Decimal request rate for the usage source. |
+| `cpu_usd_per_million_ms` | Positive Decimal CPU-millisecond rate for the usage source. |
+| `cpu_ms_per_request` | Positive Decimal planning reserve per request; not measured CPU or a proven bound. |
+| `pricing_source`, `pricing_as_of` | Nonempty provenance and ISO date; required for the usage source. |
+| `accept_approximate` | Default false; must be true to enforce a usage estimate. |
+| `accept_partial` | Default false; must be true to enforce either source. |
+
+Usage cost accumulates captured per-minute request buckets in the account's UTC
+billing-day guard period, with maximum-count deduplication across polls. It applies
+request rate plus the CPU planning reserve, without subtracting shared allowances.
+The rated source uses the largest validated account charge line, not a sum or full
+balance, and rejects all five pricing/reserve/provenance fields. It binds an account
+trigger to an explicitly chosen Worker, without attributing its costs to that Worker.
+Both sources remain partial/unknown below budget. No R2/D1/Queues budget actions
+are implemented; unsupported product/action combinations are rejected.
+
+The version 2 approval digest covers identity, action, budget semantics and account
+billing day/currency. Quality acceptance alone never arms a write. See
+[the complete procedure](automatic-cutoff.md#review-and-pin-approval).

@@ -3,8 +3,9 @@
 For first installation use [getting started](getting-started.md). Commands here
 use Bash on Linux. `sudo` marks administrator operations. Installed CLI commands
 run as `cloudflare-cost-guard` from `/opt/cloudflare-cost-guard`; running them as
-root can create incorrectly owned state. No command in this runbook authorizes a
-Cloudflare write or reopens a remote endpoint.
+root can create incorrectly owned state. This runbook does not grant provider-action approval. An explicitly armed
+`enforce` configuration can perform its approved action during `run`; see
+[automatic cutoff](automatic-cutoff.md) before arming it.
 
 Define this helper in your ordinary login-user Bash shell before CLI examples:
 
@@ -106,13 +107,21 @@ the timer continues scheduling. See [troubleshooting](troubleshooting.md).
 
 ## Configuration updates, upgrades and token rotation
 
+For optional Worker cutoff, follow [the arming procedure](automatic-cutoff.md#arm-and-preview).
+Initial installation accepts observe only; `install --allow-enforce` is an explicit
+exception for an existing managed installation with timer/service inactive. The
+ordinary update commands below retain observe mode. Keep automatic restore and
+re-enable outside the guard.
+
 The [compatibility delivery](compatibility-delivery.md) corrects zone subscription
 collection and cross-endpoint commitment identity, and adds explicit V1 billing
 coverage. Review and pin its new delivery commit before upgrading; historical
 implementation pins predate these fixes. No new token permissions, purchases or
 configuration fields are required. Preserve existing state and latches; there is
-no state migration or reason to clear SQLite. An old hourly billing cache stays
-unverified until the next fetch. Subscription inventory is recollected each run.
+no reason to clear SQLite for that compatibility update. The later automatic-cutoff
+upgrade adds schema 4 ledger/history tables while preserving earlier data; back up
+before upgrading and do not downgrade without a reviewed migration. An old hourly
+billing cache stays unverified until the next fetch. Subscription inventory is recollected each run.
 After an independently authorized upgrade/probe, inspect
 `coverage.billing_account_coverage`, `coverage.billing_info`, `coverage.billing_period`
 and each account/configured-zone subscription coverage separately. A
@@ -187,8 +196,12 @@ cfguard rearm --config /etc/cloudflare-cost-guard/config.json --account-id ACCOU
 
 For an existing account billing latch, use `--scope account --account-id ACCOUNT_ID
 --product billing` with the same command/config. Rearm changes local state only;
-it never re-enables endpoints. Pending/partial/verified cutoff evidence prevents
-rearm; preserve it and follow [enforcement recovery](enforcement.md).
+it never re-enables endpoints or recreates scripts. For budget cutoff, known
+terminal `worker_deleted`, `endpoints_disabled` and `not_applied` attempts are
+archived; all usage and audit data remain. Pending/uncertain attempts block rearm.
+A same-period budget still above threshold can trigger another armed attempt after
+rearm. Legacy partial/verified-public-cutoff evidence retains its restriction.
+Preserve evidence and follow [cutoff recovery](automatic-cutoff.md#result-and-recovery).
 
 Reports use stable hashed `resource_ref` values. `status --show-identities`
 explicitly adds a private mapping to provider IDs. Use it only locally with the

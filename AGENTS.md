@@ -18,24 +18,34 @@ mutation, publication or messaging permission. Honor the operator's current scop
   runtime dependency installation, web UI, hosted Worker or general plugin framework.
 - `config.py` validates administrator-owned configuration; `cloudflare.py` collects
   bounded evidence; `policy.py` evaluates without I/O; `state.py` persists private
-  observations/latches/intents/outbox; `runner.py` orchestrates; `notify.py` delivers.
+  observations/latches/intents/outbox; `budget.py` accounts for guard signals;
+  `cutoff.py` validates budget approvals and executes one action; `runner.py`
+  orchestrates; `notify.py` delivers.
 - Missing mode is **observe**, with zero mutating provider calls. `probe` and
   `enforce-preview` never mutate provider state. No executor token in observe.
-  Current real enforcement is unavailable.
+  Automatic budget cutoff requires explicit arming of an existing installation;
+  no live provider canary is claimed by source tests.
 - Unknown is not zero or healthy. Keep estimates, rated charges and subscription
   commitments separate. Use Decimal strings, UTC provider windows, explicit scope,
   known units and source quality. Account totals and breakdowns are not additive.
-- Adaptive analytics/unknown sampling cannot authorize a cutoff. CPU quantiles are
-  not aggregate CPU. The current real adapter cannot establish a complete rated
-  balance. Never promise a hard spending cap.
+- Raw-threshold enforcement still requires exact evidence. Budget cutoff may use
+  approximate/partial evidence only through explicit quality acceptance and a pinned
+  version 2 approval. CPU planning reserves are neither observed CPU nor upper bounds.
+  Rated guard evidence is the largest validated account line, never an assumed sum
+  of disjoint charges. Never promise a guaranteed maximum bill.
 - Identity is account + product + provider resource, not a display name or domain.
   Discovery does not enroll resources. Account costs do not identify a guilty site.
-- The only possible executor write disables both workers.dev/preview flags on an
-  exactly approved standalone Worker. All other mutations are out of scope: never
-  remove Access, DNS or routes, change subscriptions, or add arbitrary commands.
+- Exactly approved stateless HTTP Workers support `delete_worker` with fixed
+  `force=false`, or `disable_worker_endpoints` for workers.dev/preview flags only.
+  Deletion requires explicit destructive/restore-source/stateless acknowledgements;
+  owned Durable Objects, migrations, stateful bindings and ambiguous metadata block it.
+  No R2/D1/Queues or other-product actions. Never remove Access, DNS or routes, change
+  subscriptions, force deletion or add arbitrary commands. Read [automatic cutoff](docs/automatic-cutoff.md).
 - Persist intent before a write. Reconcile uncertain attempts read-only; never
   automatically retry writes or re-enable endpoints. Trips survive unknown/healthy
-  data. Operator rearm is local and explicit.
+  data. Operator rearm is local and explicit. It archives known terminal budget
+  intents while preserving all usage; unresolved attempts block rearm. Preview/probe
+  never write the budget ledger, outbox or action intents.
 
 ## Development workflow
 

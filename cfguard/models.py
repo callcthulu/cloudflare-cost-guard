@@ -91,6 +91,7 @@ class Snapshot:
     subscriptions: tuple[Subscription, ...]
     coverage: Mapping[str, str]
     collected_at: datetime
+    usage_buckets: tuple[Observation, ...] = ()
 
     def __post_init__(self):
         _utc(self.collected_at)
@@ -174,6 +175,19 @@ class AccountConfig:
 
 
 @dataclass(frozen=True)
+class GuardBudget:
+    hard_limit_usd: Decimal
+    source: str
+    request_usd_per_million: Decimal = Decimal('0')
+    cpu_usd_per_million_ms: Decimal = Decimal('0')
+    cpu_ms_per_request: Decimal = Decimal('0')
+    pricing_source: str = ''
+    pricing_as_of: str = ''
+    accept_approximate: bool = False
+    accept_partial: bool = False
+
+
+@dataclass(frozen=True)
 class ResourceConfig:
     key: ResourceKey
     name: str
@@ -184,6 +198,7 @@ class ResourceConfig:
     executor_token_file: Path | None = None
     approved_manifest_file: Path | None = None
     approved_manifest_digest: str | None = None
+    budget: GuardBudget | None = None
 
 
 @dataclass(frozen=True)
