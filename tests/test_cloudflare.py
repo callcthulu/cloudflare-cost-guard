@@ -38,12 +38,19 @@ class FakeHTTP:
 
 
 class CollectorTests(unittest.TestCase):
-    def test_deep_json_is_sanitized_and_other_account_can_continue(self):
-        body = b'{"success":true,"result":[],"unused":' + b'[' * 20000 + b'0' + b']' * 20000 + b'}'
-        client = self.client(lambda _: HttpResponse(200,body,{}))
-        with self.assertRaisesRegex(CloudflareError,'invalid_json'):
-            client.request('GET','/accounts/' + self.account.account_id + '/subscriptions')
-        self.assertEqual(len(self.http.calls),1)
+    def test_json_recursion_error_is_sanitized_without_poisoning_client(self):
+        client = self.client(self.healthy)
+        path = '/accounts/' + self.account.account_id + '/subscriptions'
+        # Parser nesting limits vary by Python build; inject the documented failure.
+        with patch('cfguard.cloudflare.json.loads', side_effect=RecursionError('synthetic sentinel')):
+            with self.assertRaises(CloudflareError) as caught:
+                client.request('GET', path)
+        self.assertEqual(str(caught.exception), 'invalid_json')
+        self.assertIsNone(caught.exception.__cause__)
+        self.assertTrue(caught.exception.__suppress_context__)
+        self.assertEqual(len(self.http.calls), 1)
+        self.assertEqual(client.request('GET', path)['result'][0]['id'], 'sub-free')
+        self.assertEqual(len(self.http.calls), 2)
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
