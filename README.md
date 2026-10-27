@@ -31,8 +31,10 @@ python3 -m unittest discover -s tests -v
 ```
 
 This project is pre-release. While the repository is private, access requires
-authorization. The installation guide pins the verified implementation commit;
-`main` now includes the integrated application and documentation. Installation
+authorization. Installation requires an explicit reviewed delivery commit;
+use the full SHA supplied with its evidence package. See the
+[compatibility delivery](docs/compatibility-delivery.md) for the subscription and
+billing-info fixes; historical pins predate these fixes. Installation
 never enables the timer. Keep tokens,
 actual configuration, notification URLs and private evidence outside Git and chat.
 
@@ -58,7 +60,8 @@ code. An unset webhook leaves alerts pending.
 
 An external heartbeat, actual approved alert receipt, two scheduled observe runs
 and a 24-hour availability window are separate operational gates. Offline tests
-prove none of those live outcomes. See [handoff status](handoff-status.json).
+prove none of those live outcomes. The original [handoff status](handoff-status.json)
+is historical; use the new delivery package's status for compatibility validation.
 
 ## Project documentation
 

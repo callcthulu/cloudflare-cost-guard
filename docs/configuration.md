@@ -62,7 +62,7 @@ Each account requires `key`, `account_id`, `read_token_file`, `billing_day`,
 | --- | --- |
 | `zones` | Explicit 32-hex zone IDs, default `[]`. A zone cannot belong to two configured accounts. No automatic zone discovery/enrollment. |
 | `expected_subscriptions` | Expected **rate plan IDs** from `rate_plan.id`, not subscription record IDs; default `[]`. Applies to account and configured-zone inventory. |
-| `billing_period_verified` | Boolean, default false; set true only after independently checking the billing anchor. Does not prove source completeness. |
+| `billing_period_verified` | Boolean, default false; operator assertion after independently checking the billing anchor. The collector also requires covered V1 info and consistent active anchors matching `billing_day`; missing metadata leaves the period unverified. Does not prove source completeness. |
 | `prices` | Default `[]`; verified pricing metadata for estimates, detailed below. |
 | `max_data_age_seconds` | Integer 1–86400, default 900. Uses data timestamps, not just successful fetch time. |
 

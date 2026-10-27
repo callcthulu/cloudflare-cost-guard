@@ -106,6 +106,21 @@ the timer continues scheduling. See [troubleshooting](troubleshooting.md).
 
 ## Configuration updates, upgrades and token rotation
 
+The [compatibility delivery](compatibility-delivery.md) corrects zone subscription
+collection and cross-endpoint commitment identity, and adds explicit V1 billing
+coverage. Review and pin its new delivery commit before upgrading; historical
+implementation pins predate these fixes. No new token permissions, purchases or
+configuration fields are required. Preserve existing state and latches; there is
+no state migration or reason to clear SQLite. An old hourly billing cache stays
+unverified until the next fetch. Subscription inventory is recollected each run.
+After an independently authorized upgrade/probe, inspect
+`coverage.billing_account_coverage`, `coverage.billing_info`, `coverage.billing_period`
+and each account/configured-zone subscription coverage separately. A
+`billing_account_coverage: unavailable` with parsed info is a provider coverage
+limitation; do not widen permissions or upgrade a plan to clear it. Absent anchors
+must leave the period unverified. Positive rated rows can still alert independently.
+No Workers-analytics opt-out was added in this compatibility change.
+
 Stop the timer **before every install/update**; installation does not disable an
 already enabled timer and is not a transactional package manager. Wait for the
 service to become inactive before replacing managed files; do not proceed while it is active. `stop` on the timer
@@ -123,10 +138,16 @@ root-controlled reviewed source checkout. Edit the protected **source** JSON
 and pin the new code before copying it into a root-controlled source location.
 Use a new source path rather than blindly overwriting a prior reviewed checkout.
 Adding accounts/zones/resources requires exact ID and token-scope review.
+Set `CFGUARD_SOURCE` to the root-controlled directory exported from that exact
+reviewed delivery commit. For a code upgrade it must be the **new** source
+directory, not the original installation snapshot. Replace the placeholder below
+before proceeding; keep the timer stopped until every check succeeds.
 
 ```sh
+CFGUARD_SOURCE=/root/REPLACE_WITH_REVIEWED_PINNED_SOURCE_DIRECTORY
+sudo test -f "$CFGUARD_SOURCE/deploy/install.py" || exit 1
 sudoedit /root/cfguard-config.json
-sudo sh -c 'umask 022; exec /usr/bin/python3 -B /root/cfguard-source/deploy/install.py install --config /root/cfguard-config.json'
+sudo sh -c 'umask 022; exec /usr/bin/python3 -B "$1/deploy/install.py" install --config /root/cfguard-config.json' cfguard-install "$CFGUARD_SOURCE"
 sudo systemd-analyze verify /etc/systemd/system/cloudflare-cost-guard.service /etc/systemd/system/cloudflare-cost-guard.timer
 cfguard validate --config /etc/cloudflare-cost-guard/config.json
 cfguard probe --config /etc/cloudflare-cost-guard/config.json
@@ -134,8 +155,7 @@ cfguard probe --config /etc/cloudflare-cost-guard/config.json
 
 The wrapper scopes `umask 022` to installer directory creation; it does not relax
 explicit secret/config/state modes or repair pre-existing directory permissions.
-That command uses the initial source path; substitute the reviewed root-controlled
-checkout path for a code upgrade. Installation checks all recorded hashes first.
+Installation checks all recorded hashes first.
 Editing installed config/code/units by hand causes future install and uninstall
 to refuse. Preserve the changed files and marker, review the difference and
 restore the exact recorded reviewed content before retrying. Do not delete the

@@ -108,6 +108,8 @@ Windows offline tests do not exercise the Linux alarm/systemd deadline.
 | --- | --- |
 | `billing_period_unverified`, `price_unknown`, `period_coverage_unknown` | No supported complete monthly estimate. Verify billing metadata/prices if appropriate, but rolling five-minute metrics still cannot produce a monthly total. |
 | `rated_unknown`, rated freshness unknown | Billable Usage is Alpha and lacks a proven update heartbeat/complete ledger. Access denial, empty rows and parsed rows are not a complete zero balance. |
+| `billing_account_coverage: unavailable`, `billing_info: parsed` | V1 info explicitly returned `covered:false`. This is unavailable account coverage, not a permission error or zero bill. Keep the total unknown; do not broaden tokens or buy a plan to make it healthy. |
+| `billing_info: unknown:<code>` or `billing_period: unverified` | Missing/invalid metadata, absent/ambiguous active anchors, stale cache or unverified configuration. Inspect the sanitized code and current read-only evidence after authorization. Subscription inventory and positive rated-line alerts remain separate. |
 | `positive_rated_line_total_unknown` | A positive in-period row was seen; alert evidence, not a reconciled full bill. Review provider records independently. |
 | `approximate` Workers decision | Adaptive sampling status is unknown. Policy warns even below threshold; no cutoff is authorized. |
 | Missing/empty Workers partitions | Unknown rather than proven zero traffic. Confirm exact account/script name and source availability; no synthetic traffic is required to force success. |

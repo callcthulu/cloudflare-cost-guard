@@ -1,4 +1,6 @@
 import unittest
+import hashlib
+import json
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal as D
@@ -31,7 +33,9 @@ def observation(key=ACCOUNT, **kwargs):
 
 def snapshot(observations=(), rated_charges=(), subscriptions=(), coverage=None):
     return Snapshot("a", observations, rated_charges, subscriptions,
-                    coverage or {"requests": "supported", "rated": "complete", "subscriptions": "complete"}, NOW)
+                    coverage or {"requests": "supported", "rated": "complete", "subscriptions": "complete",
+                                 'billing_period': 'verified_config', 'billing_account_coverage': 'covered',
+                                 'billing_info': 'parsed'}, NOW)
 
 
 class PolicyTests(unittest.TestCase):
@@ -58,7 +62,9 @@ class PolicyTests(unittest.TestCase):
                 row("old", "99", start=datetime(2026, 9, 1, tzinfo=timezone.utc), end=START))
         self.assertEqual(rated_total(rows, "a", "USD", START, END), D(".60"))
         decisions = evaluate(self.config(), snapshot(rated_charges=rows,
-            subscriptions=(Subscription(ACCOUNT, "plan", "Paid", D("7.00"), "USD", False),)), {})
+            subscriptions=(Subscription(ResourceKey('a', 'account', 'subscriptions'),
+                hashlib.sha256(json.dumps(['a', 'plan'], separators=(',', ':')).encode()).hexdigest(),
+                "Paid", D("7.00"), "USD", False, provider_id='plan', plan_id='paid'),)), {})
         self.assertEqual(next(d.value for d in decisions if d.metric == "rated_cost"), D(".60"))
         self.assertEqual(next(d.value for d in decisions if d.metric == "subscription_commitment"), D("7.00"))
         self.assertIsNone(rated_total(rows + (row("one", ".30"),), "a", "USD", START, END))
