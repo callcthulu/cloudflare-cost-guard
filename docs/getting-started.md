@@ -64,7 +64,7 @@ credential. Do not embed tokens in clone URLs, commands or shell history.
 ```sh
 git clone https://github.com/callcthulu/cloudflare-cost-guard.git "$HOME/cloudflare-cost-guard-review"
 cd "$HOME/cloudflare-cost-guard-review"
-DELIVERY_COMMIT=a00bedfca4fa89fbbfb4be4a49218257a0cd3caf
+DELIVERY_COMMIT=6bf35c783c7a7380b1243c8f7691122fc91b5b83
 test "${#DELIVERY_COMMIT}" -eq 40 || exit 1
 git fetch origin "$DELIVERY_COMMIT" || exit 1
 git switch --detach "$DELIVERY_COMMIT" || exit 1
@@ -73,8 +73,9 @@ git rev-parse HEAD
 /usr/bin/python3 -B -m unittest discover -s tests -v
 ```
 
-This full SHA is the reviewed runtime pin, including the subscription and
-billing-info compatibility fixes. Retain `DELIVERY_COMMIT` for the export below.
+This full SHA pins the reviewed public source, including the subscription and
+billing-info fixes and the portable JSON-error regression test. See the
+[publication checks](publication-status.md). Retain `DELIVERY_COMMIT` for the export below.
 No separate evidence package or release tag is required. Review any later revision
 before substituting its full SHA. If this commit cannot be fetched, stop and check
 repository history; do not silently fall back to a moving branch.
