@@ -1,76 +1,69 @@
 # Cloudflare Cost Guard
 
-Monitor Cloudflare usage, unexpected subscriptions and available rated charges
-from an existing Linux host. Python 3.11+, standard library only, private SQLite
-state and a systemd timer. **This is best-effort monitoring, not a spending cap.**
+Self-hosted monitoring for Cloudflare usage, subscriptions and available rated
+charges. Runs on an existing Linux host with Python 3.11+, SQLite and a systemd
+timer. No runtime dependencies to install.
 
-Initial **observe** mode uses read tokens only: no mutating provider calls.
-Missing or delayed evidence stays unknown. Workers requests are approximate and
-cover a rolling five-minute window; CPU totals, complete rated totals and most
-other product metrics are unavailable. Real enforcement is blocked by evidence
-and inventory limits. Read the [capability matrix](docs/capabilities.md).
+**Best-effort monitoring, not a spending cap.** Observe mode uses read-only tokens
+and makes no provider writes. Missing data stays unknown. Workers requests cover
+an approximate rolling five-minute window; aggregate CPU and complete rated totals
+are unavailable. Real enforcement is currently unsupported. See the
+[capability matrix](docs/capabilities.md) before relying on a report.
 
-## Start here
+## Get started
 
-- **Install and get a first report:** [getting started](docs/getting-started.md).
-- **Delegate setup safely:** [agent deployment guide](docs/agent-deployment.md).
-- **Choose accounts, zones and thresholds:** [configuration](docs/configuration.md).
-- **Operate, update, back up or remove:** [runbook](docs/runbook.md).
-- **Investigate a result:** [troubleshooting](docs/troubleshooting.md).
-
-Supported service deployment is Linux with systemd. Disposable Ubuntu 24.04 /
-Python 3.12 evidence and offline Windows/Python 3.14 checks are recorded in
-[evidence](docs/evidence.md). Python 3.11 is the minimum code requirement, not a
-claim that every supported Python/distribution combination has been tested.
-No pip packages, containers or new Cloudflare purchases are required.
-
-For a credential-free local check from a reviewed source checkout:
+Try the offline tests without credentials, root access or provider calls:
 
 ```sh
-python3 -m unittest discover -s tests -v
+git clone https://github.com/callcthulu/cloudflare-cost-guard.git
+cd cloudflare-cost-guard
+python3 -B -m unittest discover -s tests -v
 ```
 
-This project is pre-release. While the repository is private, access requires
-authorization. Installation requires an explicit reviewed delivery commit;
-use the full SHA supplied with its evidence package. See the
-[compatibility delivery](docs/compatibility-delivery.md) for the subscription and
-billing-info fixes; historical pins predate these fixes. Installation
-never enables the timer. Keep tokens,
-actual configuration, notification URLs and private evidence outside Git and chat.
+On Windows, use `python`. Service installation requires Linux with systemd.
 
-## Commands and results
+Follow [getting started](docs/getting-started.md) to install a reviewed commit,
+create protected read-token files and obtain a first observe report. Installation
+does not start the timer. For delegated setup, use the
+[agent deployment guide](docs/agent-deployment.md).
 
-Run installed commands from `/opt/cloudflare-cost-guard` as the dedicated
-`cloudflare-cost-guard` user, with `--config /etc/cloudflare-cost-guard/config.json`.
+## Use it
 
-| Command | Behavior |
-| --- | --- |
-| `validate` | Validate configuration; no provider calls or token-content check. |
-| `probe` | Read-only provider collection; no notifications/actions. Initializes local state and lock if absent. |
-| `run` | One collection, policy and outbox cycle; observe mode initially. |
-| `status` | Local timestamps, pending notifications and latch counts; no provider calls. |
-| `rearm` | Explicitly reset an enrolled local latch; never reopen endpoints. |
-| `enforce-preview` | Evaluate an eligible proposed plan without remote mutation; not a readiness certificate. |
+The [getting-started guide](docs/getting-started.md#5-install-validate-and-probe)
+defines the installed `cfguard` shell helper. With that helper:
 
-Exit codes: `0` completed/healthy, `2` invalid configuration, `3` unknown
-collection/quality or runtime/lock failure, `4` warning/incident, `5` action or
-pending/failed notification. Within a run, precedence is **5 > 4 > 3 > 0**.
-Inspect JSON: a notification result can mask collection failures in the exit
-code. An unset webhook leaves alerts pending.
+```sh
+cfguard probe --config /etc/cloudflare-cost-guard/config.json
+cfguard run --config /etc/cloudflare-cost-guard/config.json
+cfguard status --config /etc/cloudflare-cost-guard/config.json
+```
 
-An external heartbeat, actual approved alert receipt, two scheduled observe runs
-and a 24-hour availability window are separate operational gates. Offline tests
-prove none of those live outcomes. The original [handoff status](handoff-status.json)
-is historical; use the new delivery package's status for compatibility validation.
+`probe` collects read-only evidence without sending alerts; `run` evaluates policy
+and delivers queued alerts; `status` reads local state. Unknown or warning results
+need attention. With no notification receiver, pending alerts can produce exit 5;
+that does not establish collection health or alert receipt. See
+[configuration](docs/configuration.md), [operations](docs/runbook.md) and
+[troubleshooting](docs/troubleshooting.md).
 
-## Project documentation
+Exit codes: `0` completed, `2` invalid config, `3` unknown/collection/runtime
+failure, `4` warning/incident, `5` action or pending/failed notification. For a run,
+precedence is **5 > 4 > 3 > 0**; inspect JSON as well as the exit code.
 
-| Topic | Documents |
-| --- | --- |
-| Operation and boundaries | [Capabilities](docs/capabilities.md), [enforcement](docs/enforcement.md), [threat model](docs/threat-model.md), [Linux testing](docs/linux-testing.md) |
-| Design and validation | [Design](docs/design.md), [implementation plan](docs/implementation-plan.md), [progress](docs/progress.md), [evidence](docs/evidence.md), [independent reviews](docs/verification/reviews.md) |
-| Contribution and maintenance | [Contributing](CONTRIBUTING.md), [agent instructions](AGENTS.md), [maintaining](docs/maintaining.md), [changelog](CHANGELOG.md) |
-| Community and release | [Support](SUPPORT.md), [code of conduct](CODE_OF_CONDUCT.md), [security reporting](SECURITY.md), [publication checklist](docs/publication.md), [launch plan](docs/launch-plan.md), [branch governance](docs/governance.md), [MIT license](LICENSE) |
+Keep credentials, real configuration and deployment evidence outside Git. The host
+needs its own independent outage monitoring. Offline tests do not prove live
+provider access, notification delivery or a maximum bill.
 
-The [open-source preparation record](docs/publication-readiness.md) separates
-completed repository checks from the owner's remaining launch decisions.
+## Contribute
+
+Small, focused pull requests are welcome. Start with [CONTRIBUTING](CONTRIBUTING.md)
+for development, testing and review. Use [Issues](https://github.com/callcthulu/cloudflare-cost-guard/issues)
+for ordinary bugs and questions, and [private vulnerability reporting](SECURITY.md)
+for security findings. See [support](SUPPORT.md), [community rules](CODE_OF_CONDUCT.md)
+and the [changelog](CHANGELOG.md).
+
+The [threat model](docs/threat-model.md) explains trust boundaries. Maintainers can
+find review and release procedures, plus the historical technical archive, in
+[maintaining](docs/maintaining.md).
+
+[MIT licensed](LICENSE). Independent and unofficial; unaffiliated with and not
+endorsed by Cloudflare. Cloudflare is a trademark of Cloudflare, Inc.

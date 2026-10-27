@@ -5,7 +5,7 @@ The utility cannot prove a hard cap or authorize real enforcement.
 
 ## Operator inputs
 
-Provide only what the next stage needs through your approved private channel: a
+Provide only what the next stage needs through your approved private channel: the
 reviewed commit, existing host connection profile and pinned host-key identity,
 enrolled account/zone/resource IDs, thresholds/currency/billing period, protected
 read-token **file paths** and an approved notification destination **file path**.
@@ -18,13 +18,14 @@ need a Worker or cutoff target.
 
 ## Copyable prompt
 
-Replace the bracketed references with your reviewed values. The prompt does not
+Use the pinned runtime below, or a later full SHA you have reviewed. Replace the
+bracketed host reference with your approved profile. The prompt does not
 grant live-install or notification permission by itself.
 
 ```text
 Prepare Cloudflare Cost Guard for my explicitly enrolled resources.
 Repository: https://github.com/callcthulu/cloudflare-cost-guard
-Reviewed source commit: [full commit SHA I reviewed]
+Reviewed runtime commit: a00bedfca4fa89fbbfb4be4a49218257a0cd3caf
 Existing host connection profile: [approved profile reference, no key contents]
 
 Read AGENTS.md, README.md, docs/getting-started.md, docs/capabilities.md,
@@ -53,7 +54,7 @@ canary/action requires separate resource-specific approval and review.
 
 Return the source commit, sanitized config summary, test/installation results,
 service/timer state, rollback, coverage/latency, owner actions and a private
-deployment-status JSON. Unknown verification is false. Never share raw config,
+deployment-status JSON. Unknown verification must remain explicitly unverified. Never share raw config,
 credentials, private notification data or status --show-identities output.
 Do not claim a hard spending cap.
 ```

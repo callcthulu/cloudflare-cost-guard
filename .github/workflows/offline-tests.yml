@@ -1,0 +1,46 @@
+name: Offline tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: offline-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # Do not allocate a paid private-repository runner before public launch.
+    if: github.event.repository.private == false
+    name: ${{ matrix.check }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - check: offline-linux-py311
+            os: ubuntu-24.04
+            python: '3.11'
+          - check: offline-linux-py314
+            os: ubuntu-24.04
+            python: '3.14'
+          - check: offline-windows-py314
+            os: windows-2025
+            python: '3.14'
+    steps:
+      - name: Check out reviewed source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Run credential-free unit tests
+        run: python -B -m unittest discover -s tests -v

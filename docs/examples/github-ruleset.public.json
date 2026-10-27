@@ -1,5 +1,5 @@
 {
-  "name": "Public default branch - solo maintainer",
+  "name": "Default branch integrity",
   "target": "branch",
   "enforcement": "active",
   "bypass_actors": [],
@@ -21,6 +21,17 @@
         "require_last_push_approval": false,
         "required_approving_review_count": 0,
         "required_review_thread_resolution": true
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "required_status_checks": [
+          {"context": "offline-linux-py311", "integration_id": 15368},
+          {"context": "offline-linux-py314", "integration_id": 15368},
+          {"context": "offline-windows-py314", "integration_id": 15368}
+        ],
+        "strict_required_status_checks_policy": true
       }
     }
   ]
