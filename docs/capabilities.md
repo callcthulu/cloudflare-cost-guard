@@ -1,6 +1,6 @@
 # Provider capabilities
 
-Official contracts checked 2026-10-26. This describes implemented offline adapters;
+Official contracts checked 2026-10-27. This describes implemented offline adapters;
 account access, actual latency and live endpoint containment remain unverified.
 
 Cloudflare also offers [native budget alerts](https://developers.cloudflare.com/billing/manage/budget-alerts/)
@@ -14,7 +14,8 @@ bill or a substitute for evaluating native controls. No billing settings are cha
 | Workers GraphQL | `sum.requests`, one account aggregate and distinct script breakdowns | Five disjoint one-minute partitions covering the previous five completed minutes. Adaptive analytics; sampling status is unknown, so every value is approximate and cannot authorize containment. No monthly total. |
 | Workers CPU | None | The documented tutorial exposes CPU quantiles. No conversion of quantiles into a total; `workers.cpu_ms` is unsupported. |
 | Account subscriptions | Separate commitment inventory | Billing Read. Explicit subscription IDs and plan IDs required. Missing price/currency/identity is unknown. Plan IDs, such as `free`, match `expected_subscriptions`. |
-| Configured zone subscriptions | Separate zone commitment inventory | Same contract, queried once per configured zone. This does not discover every zone belonging to the account. |
+| Configured zone subscriptions | Singular subscription object per configured zone | Billing Read; `GET /zones/{zone_id}/subscription`. Endpoint appearances retain zone provenance but share account/provider identity with the account list. No automatic zone discovery. |
+| Billable Usage V1 info | Explicit account coverage and billing metadata | `GET /accounts/{account_id}/billable-usage/info`. `covered:false` is unavailable coverage, not zero spend or a permission failure. Missing/invalid info is unknown. Missing anchors leave the period unverified. |
 | Billable Usage V1 Alpha | Parsed incremental rated rows | Access must be probed. PascalCase contract only. Missing source update heartbeat prevents a complete/fresh total; positive parsed charges can still alert. Empty/denied responses mean unknown. |
 | Other products | Possible subscription/rated rows only | No fast usage adapter or containment. No complete account product inventory is claimed. |
 | Worker public endpoint inventory | Subdomain flags, account custom domains, configured-zone routes, cron schedules | Inbound bindings/queues and routes in other zones are not proven absent. `complete=false` blocks live enforcement. |
@@ -33,15 +34,49 @@ provider timestamp, script name and status. Discovered scripts are evidence only
 they are never enrolled for modification. Account totals and breakdowns must never
 be added together.
 
-The [subscriptions endpoint](https://developers.cloudflare.com/api/resources/accounts/subresources/subscriptions/methods/get/)
-documents account and zone scopes and optional `result_info`, but no pagination
-query parameters. This adapter accepts the documented unpaginated result, or a
+The [account subscriptions endpoint](https://developers.cloudflare.com/api/resources/accounts/subresources/subscriptions/methods/get/)
+returns a list with optional `result_info`, but no documented pagination
+query parameters. This adapter accepts an unpaginated result, or a
 result whose `total_count` equals the returned count. A larger/ambiguous total
 fails closed as incomplete rather than guessing `page` parameters. The same
 principle applies to [routes](https://developers.cloudflare.com/api/resources/workers/subresources/routes/methods/list/)
 and [custom domains](https://developers.cloudflare.com/api/resources/workers/subresources/domains/methods/list/).
 Consequently an account whose endpoint needs undocumented pagination is not
 fully supported until its actual contract is verified.
+
+The [zone subscription endpoint](https://developers.cloudflare.com/api/resources/zones/subresources/subscriptions/methods/get/)
+is singular and returns an object. A list, null, absent object or malformed
+identity/plan/price/currency is unknown. The plural zone route is not used.
+An empty account list with a nonzero `total_count` still fails completeness.
+Completeness here describes that endpoint response, never an all-product inventory.
+
+Commitments reconcile by owning account plus verified provider subscription ID,
+independent of endpoint. Both endpoint appearances remain in the private snapshot;
+the zone appearance supplies its zone attribution. A shared zero or positive
+subscription counts once. Conflicting amount, currency, plan, identity or zone
+attribution makes the commitment total unknown. Two distinct IDs remain distinct;
+display names do not identify subscriptions. Declared plan scope must be compatible
+with zone attribution. A forbidden plan can still raise an account alert when the
+commitment total is unknown; it never selects a site or authorizes containment.
+
+The [V1 info contract](https://developers.cloudflare.com/api/resources/billing/subresources/usage/methods/get_account_usage_info_v1/)
+supplies `covered` and subscription metadata separately from usage rows.
+`billing_account_coverage` reports `covered`, `unavailable`, or `unknown:<code>`;
+`billing_info` distinguishes parsed, unknown and not fetched. A later covered
+response can replace unavailable coverage on the next hourly fetch. Neither
+state proves a complete rated balance. `billing_period` remains `unverified`
+unless the operator has independently verified configuration and valid active
+metadata has one common, nonfuture UTC-midnight anchor matching `billing_day`.
+Empty, inactive or ambiguous subscription metadata cannot verify a period.
+These fields are cached with rated evidence between hourly fetches, retaining
+their original fetch time. Stale/future cache entries, old cache formats, billing-day
+changes and period rollover cannot promote period verification. Positive rated
+rows remain separate alert evidence even when account coverage is unavailable.
+Verified metadata carries `billing_period_valid_until`, bounded by the period
+end, active subscription endings and known future subscription starts. Cached
+proof expires at that boundary; it never outlives a known metadata transition.
+Policy requires explicit parsed info, covered-account and verified-period flags;
+absent flags cannot establish a zero total, even for synthetic complete rows.
 
 The [V1 billing schema](https://developers.cloudflare.com/api/resources/billing/subresources/usage/methods/get_account_usage_v1/)
 documents `ContractedCost` per charge window, `CumulatedContractedCost` per billing

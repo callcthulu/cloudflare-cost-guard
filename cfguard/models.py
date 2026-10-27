@@ -78,6 +78,9 @@ class Subscription:
     currency: str
     allowed: bool | None
     quality: str = "good"
+    provider_id: str | None = None
+    plan_id: str | None = None
+    plan_scope: str | None = None
 
 
 @dataclass(frozen=True)

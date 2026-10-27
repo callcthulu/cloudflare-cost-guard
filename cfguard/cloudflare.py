@@ -15,6 +15,7 @@ import urllib.parse
 import urllib.request
 
 from .models import Observation, RatedCharge, ResourceKey, Snapshot, Subscription
+from .config import billing_window
 
 API = "https://api.cloudflare.com/client/v4"
 GRAPHQL_LIMIT = 10000
@@ -187,24 +188,65 @@ class Client:
                 raise CloudflareError("invalid_json") from None
 
     def _subscriptions(self, account, scope, scope_id):
-        rows = _rows(self.request("GET", f"/{'accounts' if scope == 'account' else 'zones'}/{_identifier(scope_id)}/subscriptions"))
+        if scope == "account":
+            rows = _rows(self.request("GET", f"/accounts/{_identifier(scope_id)}/subscriptions"))
+        else:
+            row = self.request("GET", f"/zones/{_identifier(scope_id)}/subscription").get("result")
+            if not isinstance(row, dict):
+                raise CloudflareError("subscription_schema")
+            rows = [row]
         result = {}
         key = ResourceKey(account.account_id, scope, "subscriptions", zone_id=scope_id if scope == "zone" else None)
         for row in rows:
-            source_id = row.get("id")
+            source_id = _identifier(row.get("id"))
             plan = row.get("rate_plan")
             currency = row.get("currency")
-            if not source_id or not isinstance(plan, dict) or not plan.get("id") or currency != "USD":
+            if not isinstance(plan, dict) or currency != "USD":
+                raise CloudflareError("subscription_schema")
+            plan_id = _identifier(plan.get("id"))
+            plan_scope = plan.get("scope")
+            if "scope" in plan and (not isinstance(plan_scope, str) or plan_scope not in {"account", "zone"}):
                 raise CloudflareError("subscription_schema")
             price = _number(row.get("price"))
             # The documented top-level price is in USD, even though display currency is optional.
-            source = f"{scope}:{scope_id}:{source_id}"
-            item = Subscription(key, source, plan.get("public_name", plan["id"]), price, currency,
-                                plan["id"] in account.expected_subscriptions)
+            source = hashlib.sha256(json.dumps([account.account_id, source_id], separators=(",", ":")).encode()).hexdigest()
+            item = Subscription(key, source, plan.get("public_name", plan_id), price, currency,
+                                plan_id in account.expected_subscriptions, provider_id=source_id,
+                                plan_id=plan_id, plan_scope=plan_scope)
             if source in result and result[source] != item:
                 raise CloudflareError("conflicting_subscription")
             result[source] = item
         return tuple(result.values())
+
+    def _billing_info(self, account, now):
+        result = self.request("GET", f"/accounts/{account.account_id}/billable-usage/info").get("result")
+        if not isinstance(result, dict) or type(result.get("covered")) is not bool:
+            raise CloudflareError("billing_info_schema")
+        subscriptions = result.get("subscriptions")
+        if not isinstance(subscriptions, list):
+            raise CloudflareError("billing_info_schema")
+        active_anchors = set()
+        valid_until = billing_window(now, account.billing_day)[1]
+        for row in subscriptions:
+            if not isinstance(row, dict):
+                raise CloudflareError("billing_info_schema")
+            _identifier(row.get("id"))
+            anchor = _timestamp(row.get("billing_cycle_anchor_timestamp"))
+            start = _timestamp(row.get("start_timestamp"))
+            end = _timestamp(row["end_timestamp"]) if "end_timestamp" in row else None
+            if end is not None and end <= start:
+                raise CloudflareError("billing_info_window")
+            if start <= now and (end is None or now < end):
+                active_anchors.add(anchor)
+                if end is not None:
+                    valid_until = min(valid_until, end)
+            elif start > now:
+                valid_until = min(valid_until, start)
+        verified = False
+        if result["covered"] and account.billing_period_verified and len(active_anchors) == 1:
+            anchor = next(iter(active_anchors))
+            verified = anchor <= now and anchor.day == account.billing_day and not any((anchor.hour, anchor.minute, anchor.second, anchor.microsecond))
+        return result["covered"], verified, valid_until if verified else None
 
     def _rated(self, account, now):
         rows = _rows(self.request("GET", f"/accounts/{account.account_id}/billable-usage"))
@@ -288,7 +330,7 @@ class Client:
         if now.tzinfo is None or now.utcoffset() != timedelta(0):
             raise ValueError("now must be UTC")
         subscriptions = []
-        coverage = {"workers.cpu_ms": "unsupported: no documented aggregate CPU sum", "workers.billing_period_requests": "unsupported: rolling five-minute window only", "billing_period": "verified_config" if account.billing_period_verified else "unverified", "other_products": "unsupported: no fast metrics or cutoff", "inventory": "partial: only configured zones; no automatic enrollment"}
+        coverage = {"workers.cpu_ms": "unsupported: no documented aggregate CPU sum", "workers.billing_period_requests": "unsupported: rolling five-minute window only", "billing_period": "unverified", "other_products": "unsupported: no fast metrics or cutoff", "inventory": "partial: only configured zones; no automatic enrollment"}
         for scope, scope_id in [("account", account.account_id)] + [("zone", zone) for zone in account.zones]:
             label = "subscriptions.account" if scope == "account" else "subscriptions.zone:" + scope_id
             try:
@@ -298,7 +340,19 @@ class Client:
                 coverage[label] = "unknown:" + str(error)
         rated = ()
         coverage["rated_usage"] = "not_fetched"
+        coverage["billing_info"] = "not_fetched"
+        coverage["billing_account_coverage"] = "unknown:not_fetched"
         if include_rated:
+            try:
+                covered, verified, valid_until = self._billing_info(account, now)
+                coverage["billing_info"] = "parsed"
+                coverage["billing_account_coverage"] = "covered" if covered else "unavailable"
+                coverage["billing_period"] = "verified_config" if verified else "unverified"
+                if verified:
+                    coverage["billing_period_valid_until"] = _iso(valid_until)
+            except CloudflareError as error:
+                coverage["billing_info"] = "unknown:" + str(error)
+                coverage["billing_account_coverage"] = "unknown:" + str(error)
             try:
                 rated = self._rated(account, now)
                 coverage["rated_usage"] = "unknown: source update heartbeat unavailable"

@@ -66,16 +66,20 @@ The HTTPS URL itself contains no secret.
 ```sh
 git clone https://github.com/callcthulu/cloudflare-cost-guard.git "$HOME/cloudflare-cost-guard-review"
 cd "$HOME/cloudflare-cost-guard-review"
-git switch --detach 7ea37012a0e321f4842579dcff8d3867e3f94ef5
+DELIVERY_COMMIT=REPLACE_WITH_REVIEWED_40_CHARACTER_DELIVERY_SHA
+test "${#DELIVERY_COMMIT}" -eq 40 || exit 1
+git fetch origin "$DELIVERY_COMMIT" || exit 1
+git switch --detach "$DELIVERY_COMMIT" || exit 1
+test "$(git rev-parse HEAD)" = "$DELIVERY_COMMIT" || exit 1
 git rev-parse HEAD
 /usr/bin/python3 -m unittest discover -s tests -v
 ```
 
-Expected HEAD: `7ea37012a0e321f4842579dcff8d3867e3f94ef5`.
-This is the reviewed implementation commit, **not a tag or published release**.
-The implementation and documentation are integrated into `main`; the pinned
-revision remains the originally reviewed deployment source, not an automatic
-upgrade to whatever is newest. If it cannot be fetched, stop and verify repository
+Replace the placeholder with the exact full SHA supplied with the reviewed
+delivery and its `handoff-status.json`; retain this shell variable for the export
+below. Do not reuse the original implementation pin for the
+[compatibility fixes](compatibility-delivery.md). No release tag is implied.
+If the commit cannot be fetched, stop and verify repository
 access/history. Never substitute an
 unreviewed branch to get past the error. For a future release, follow its actual
 published pin and review its changes; no release tag is invented here.
@@ -103,7 +107,7 @@ artifacts and Git credentials/metadata. From your login-user Bash shell:
 ```sh
 set -o pipefail
 sudo mkdir -m 0750 /root/cfguard-source &&
-  git -C "$HOME/cloudflare-cost-guard-review" archive --format=tar 7ea37012a0e321f4842579dcff8d3867e3f94ef5 |
+  git -C "$HOME/cloudflare-cost-guard-review" archive --format=tar "$DELIVERY_COMMIT" |
   sudo tar -x --no-same-owner --no-same-permissions -C /root/cfguard-source
 ```
 
