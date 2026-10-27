@@ -13,6 +13,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from .config import ConfigError, load_config
+from .config import billing_window
 from .models import Decision, RatedCharge, ResourceKey, Snapshot
 from .notify import deliver
 from .policy import evaluate
@@ -54,8 +55,11 @@ def _rated_snapshot(store, account, snapshot, now, fetch):
     cache_key = 'rated_cache:' + account.account_id
     if fetch:
         store.set_meta('rated_fetch:' + account.account_id, now.isoformat())
+        metadata = {key: value for key, value in snapshot.coverage.items()
+                    if key.startswith('rated_') or key.startswith('billing_')}
         store.set_meta(cache_key, encode({'rows': snapshot.rated_charges,
-            'coverage': snapshot.coverage.get('rated_usage', 'unknown'), 'fetched_at': now.isoformat()}))
+            'coverage': snapshot.coverage.get('rated_usage', 'unknown'),
+            'metadata': metadata, 'billing_day': account.billing_day, 'fetched_at': now.isoformat()}))
         return snapshot
     cached = store.get_meta(cache_key)
     if not cached:
@@ -69,9 +73,30 @@ def _rated_snapshot(store, account, snapshot, now, fetch):
         for name in ('period_start', 'period_end'):
             row[name] = datetime.fromisoformat(row[name])
         rows.append(RatedCharge(**row))
-    age = (now - datetime.fromisoformat(raw['fetched_at'])).total_seconds()
+    fetched_at = datetime.fromisoformat(raw['fetched_at'])
+    age = (now - fetched_at).total_seconds()
     coverage = dict(snapshot.coverage)
-    coverage['rated_usage'] = raw['coverage'] if 0 <= age <= 3900 else 'stale'
+    fresh = 0 <= age <= 3900
+    metadata = raw.get('metadata', {})  # Old cache entries carry no coverage proof.
+    if fresh and metadata:
+        coverage.update(metadata)
+    else:
+        problem = 'stale_cache' if not fresh else 'cache_metadata_missing'
+        coverage['billing_info'] = 'unknown:' + problem
+        coverage['billing_account_coverage'] = 'unknown:' + problem
+    coverage['rated_usage'] = raw['coverage'] if fresh else 'stale'
+    try:
+        valid_until = datetime.fromisoformat(metadata.get('billing_period_valid_until', '').replace('Z', '+00:00'))
+        period_valid = (valid_until.tzinfo is not None and valid_until.utcoffset().total_seconds() == 0
+                        and fetched_at <= now < valid_until <= billing_window(now, account.billing_day)[1])
+    except (ValueError, TypeError, AttributeError):
+        period_valid = False
+    if (not fresh or not period_valid or not account.billing_period_verified
+            or metadata.get('billing_info') != 'parsed' or metadata.get('billing_account_coverage') != 'covered'
+            or raw.get('billing_day') != account.billing_day
+            or billing_window(fetched_at, account.billing_day) != billing_window(now, account.billing_day)):
+        coverage['billing_period'] = 'unverified'
+        coverage.pop('billing_period_valid_until', None)
     return replace(snapshot, rated_charges=tuple(rows), coverage=coverage)
 
 
