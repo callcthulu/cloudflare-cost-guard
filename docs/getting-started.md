@@ -65,7 +65,7 @@ credential. Do not embed tokens in clone URLs, commands or shell history.
 ```sh
 git clone https://github.com/callcthulu/cloudflare-cost-guard.git "$HOME/cloudflare-cost-guard-review"
 cd "$HOME/cloudflare-cost-guard-review"
-DELIVERY_COMMIT=6bf35c783c7a7380b1243c8f7691122fc91b5b83
+DELIVERY_COMMIT=9c6e16b817e0f3541c8fceb986342dd83d6535f3
 test "${#DELIVERY_COMMIT}" -eq 40 || exit 1
 git fetch origin "$DELIVERY_COMMIT" || exit 1
 git switch --detach "$DELIVERY_COMMIT" || exit 1
@@ -74,10 +74,11 @@ git rev-parse HEAD
 /usr/bin/python3 -B -m unittest discover -s tests -v
 ```
 
-This full SHA pins the reviewed monitoring-only public source, including the
-subscription/billing-info fixes and portable JSON-error regression test. It predates
-the optional automatic-cutoff feature. Use it for observe deployment only until a
-reviewed feature commit is published and pinned. See [publication checks](publication-status.md).
+This full SHA pins the independently reviewed source including automatic Worker
+budget cutoff. Initial installation still uses observe mode; arming is a separate
+step in the [cutoff guide](automatic-cutoff.md). See [cutoff evidence](automatic-cutoff-evidence.md)
+for offline, disposable Linux and live-verification boundaries. Later documentation
+commits may update this guide without changing the pinned runtime.
 Retain `DELIVERY_COMMIT` for the export below.
 No separate evidence package or release tag is required. Review any later revision
 before substituting its full SHA. If this commit cannot be fetched, stop and check
@@ -85,7 +86,7 @@ repository history; do not silently fall back to a moving branch.
 
 Review at least `cfguard/`, `deploy/install.py`, the two systemd units, the
 [capability matrix](capabilities.md), [threat model](threat-model.md) and
-[evidence](evidence.md). Tests are offline and use no provider credentials.
+[cutoff evidence](automatic-cutoff-evidence.md). Tests are offline and use no provider credentials.
 
 ## 3. Move approved source under administrator control
 
