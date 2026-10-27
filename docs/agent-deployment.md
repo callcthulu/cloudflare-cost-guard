@@ -18,14 +18,14 @@ need a Worker or cutoff target.
 
 ## Copyable prompt
 
-Use the pinned runtime below, or a later full SHA you have reviewed. Replace the
+Use the pinned source below, or a later full SHA you have reviewed. Replace the
 bracketed host reference with your approved profile. The prompt does not
 grant live-install or notification permission by itself.
 
 ```text
 Prepare Cloudflare Cost Guard for my explicitly enrolled resources.
 Repository: https://github.com/callcthulu/cloudflare-cost-guard
-Reviewed runtime commit: a00bedfca4fa89fbbfb4be4a49218257a0cd3caf
+Reviewed source commit: 6bf35c783c7a7380b1243c8f7691122fc91b5b83
 Existing host connection profile: [approved profile reference, no key contents]
 
 Read AGENTS.md, README.md, docs/getting-started.md, docs/capabilities.md,
