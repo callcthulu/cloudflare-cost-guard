@@ -17,5 +17,7 @@ State what remains unverified. Documentation-only changes can use link/diff chec
 - [ ] Diff and introduced history reviewed for secrets/private data; fixtures synthetic.
 - [ ] No deployment configuration, identifiers, tokens, state, raw logs or exports added.
 - [ ] Observe zero-writes, unknown evidence, separate ledgers and enforcement gates preserved.
-- [ ] No unreviewed paid CI, workflows, automatic publication or deployment added.
+- [ ] Workflow changes reviewed for read-only permissions, pinned actions and fork safety.
+- [ ] No credentials, private-data uploads, paid runners or automatic deployment added.
+- [ ] Maintainer/independent review recorded; agent review is evidence, not GitHub approval.
 - [ ] I can license this contribution under the existing MIT license.
