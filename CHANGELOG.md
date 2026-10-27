@@ -7,6 +7,9 @@ production-readiness certification is claimed.
 
 ### Fixed
 
+- Make the JSON parser error regression independent of platform nesting limits;
+  production parsing and error guards are unchanged.
+
 - Use the singular zone subscription object endpoint while preserving strict
   completeness checks on account lists.
 - Reconcile duplicate account/zone subscription appearances by owning account and
