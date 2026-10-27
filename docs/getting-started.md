@@ -16,7 +16,8 @@ its standard-library SQLite module, an OS CA certificate store, `git`, `tar`, `s
 `groupadd`, `useradd` and `runuser`. Runtime has **no pip dependencies** and no
 virtual environment/package installation step. Tested deployment evidence is
 Ubuntu 24.04 / Python 3.12 / systemd 255; Windows Python 3.14 is offline test
-coverage, not service support. Python 3.11 is not yet a tested deployment matrix.
+coverage, not service support. Offline CI covers additional Python versions; that
+is separate from service lifecycle evidence on a real Linux fixture.
 
 Run these read-only checks as your login user:
 
@@ -57,32 +58,26 @@ measurements are not a production capacity guarantee.
 
 ## 2. Obtain and review the exact source
 
-As the login user, use existing GitHub authentication if required. While this
-repository is private, authorized access is required; a public HTTPS clone needs
-no read credential. Use your approved credential manager or SSH
-setup; do not embed a token in a clone URL, command, config, chat or shell history.
-The HTTPS URL itself contains no secret.
+As the login user, clone the source over HTTPS. A public clone needs no GitHub
+credential. Do not embed tokens in clone URLs, commands or shell history.
 
 ```sh
 git clone https://github.com/callcthulu/cloudflare-cost-guard.git "$HOME/cloudflare-cost-guard-review"
 cd "$HOME/cloudflare-cost-guard-review"
-DELIVERY_COMMIT=REPLACE_WITH_REVIEWED_40_CHARACTER_DELIVERY_SHA
+DELIVERY_COMMIT=a00bedfca4fa89fbbfb4be4a49218257a0cd3caf
 test "${#DELIVERY_COMMIT}" -eq 40 || exit 1
 git fetch origin "$DELIVERY_COMMIT" || exit 1
 git switch --detach "$DELIVERY_COMMIT" || exit 1
 test "$(git rev-parse HEAD)" = "$DELIVERY_COMMIT" || exit 1
 git rev-parse HEAD
-/usr/bin/python3 -m unittest discover -s tests -v
+/usr/bin/python3 -B -m unittest discover -s tests -v
 ```
 
-Replace the placeholder with the exact full SHA supplied with the reviewed
-delivery and its `handoff-status.json`; retain this shell variable for the export
-below. Do not reuse the original implementation pin for the
-[compatibility fixes](compatibility-delivery.md). No release tag is implied.
-If the commit cannot be fetched, stop and verify repository
-access/history. Never substitute an
-unreviewed branch to get past the error. For a future release, follow its actual
-published pin and review its changes; no release tag is invented here.
+This full SHA is the reviewed runtime pin, including the subscription and
+billing-info compatibility fixes. Retain `DELIVERY_COMMIT` for the export below.
+No separate evidence package or release tag is required. Review any later revision
+before substituting its full SHA. If this commit cannot be fetched, stop and check
+repository history; do not silently fall back to a moving branch.
 
 Review at least `cfguard/`, `deploy/install.py`, the two systemd units, the
 [capability matrix](capabilities.md), [threat model](threat-model.md) and

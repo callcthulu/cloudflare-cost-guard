@@ -1,12 +1,13 @@
 # Open-source preparation record
 
-Historical preparation snapshot. Integration occurred subsequently: PR #1 and
-PR #2 are now merged into `main`; see [the current launch plan](launch-plan.md).
-The original scoped results and pending-at-review decisions below are preserved.
+Historical snapshot from 2026-10-26. Results and pending decisions below describe
+that review only and are preserved unchanged. They do not describe current
+repository settings; see [publication status](publication-status.md).
 
 Date: 2026-10-26. Scope: documentation/community metadata only, based on reviewed
-implementation `7ea37012a0e321f4842579dcff8d3867e3f94ef5`. The repository remains
-private; no release tag, deployment, GitHub setting change or provider action occurred.
+implementation `7ea37012a0e321f4842579dcff8d3867e3f94ef5`. At the time of this
+review the repository was private; no release tag, deployment, GitHub setting
+change or provider action occurred.
 
 ## Delivered
 

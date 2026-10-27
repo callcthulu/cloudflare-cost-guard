@@ -1,66 +1,56 @@
 # Contributing
 
-Cloudflare Cost Guard is a private, pre-release project preparing for possible
-public reuse. Publication is a separate maintainer decision. Read the
-[README](README.md), [capabilities](docs/capabilities.md),
-[design boundaries](docs/design.md) and [security policy](SECURITY.md) first.
+Read the [README](README.md), [capabilities](docs/capabilities.md) and
+[security policy](SECURITY.md) first. For an ordinary bug or feature, check existing
+issues and describe the problem and a focused scope. Report vulnerabilities
+privately through [SECURITY.md](SECURITY.md).
 
-## Propose a focused change
+## Make a change
 
-Use the repository's issue templates for ordinary bugs or feature proposals when
-Issues is enabled. Describe the problem, expected behavior and a small proposed
-scope. Check existing issues and pull requests before opening another one.
-Security findings follow [SECURITY.md](SECURITY.md), not a public issue or PR.
+Fork the repository, create a branch separate from `main`, and submit a small pull
+request. Maintainers working in this repository also use dedicated branches.
+Explain the resulting behavior, validation and remaining limits. Update the README
+or linked guides when usage changes. Follow the [code of conduct](CODE_OF_CONDUCT.md).
 
-Work on a dedicated branch separate from `main` or `master`; submit a small pull
-request for review. Do not push changes directly to the default branch. Explain
-behavior, limits, validation and any unresolved evidence in the PR. Changes to
-API contracts should cite current official Cloudflare documentation and preserve
-unknown, incomplete, stale and approximate evidence instead of treating it as zero.
-
-## Develop and verify locally
-
-Python 3.11+ and the standard library are sufficient; there are no pip dependencies.
-From the repository root, run the offline suite as an unprivileged user:
+Python 3.11+ and the standard library are sufficient. From the repository root:
 
 ```sh
-python3 -m unittest discover -s tests -v
+python3 -B -m unittest discover -s tests -v
+git diff --check
 ```
 
-On Windows, `python` can replace `python3`. The suite uses synthetic fixtures and
-injected transports; its notification receipt check uses local loopback only.
-It needs no credentials or external provider access. Never use real account data
-to make a test pass. Add meaningful regression tests for changed behavior,
-including rejected/unknown inputs and failure paths when changing security or
-enforcement boundaries. Avoid tests that only repeat implementation details.
+On Windows, use `python`. The suite uses synthetic fixtures and injected
+transports; a notification test uses local loopback. It needs no credentials,
+pip packages, Linux root or external provider access. For behavior changes, add
+meaningful regression coverage at the changed trust boundary, including rejected
+and unknown inputs where relevant.
 
-Linux installation and lifecycle checks require a fresh disposable VM or WSL2
-distribution with systemd. Follow [Linux testing](docs/linux-testing.md); never run
-the root lifecycle harness on a production or shared host. Routine contribution
-checks must not install services, contact Cloudflare, send real notifications or
-perform live containment. Offline success does not establish live safety.
+The root lifecycle harness creates users and fixed service paths. Run it only in
+a fresh disposable Linux fixture following [Linux testing](docs/linux-testing.md),
+never on a workstation or shared host. A contribution does not authorize a live
+provider query, installation, notification or cutoff.
 
-## Before requesting review
+## Keep the boundaries intact
 
-- Update the README and relevant linked docs when commands, behavior or limits change.
-- Review the complete diff and any new commits/history for secrets and private data.
-  Automated scanning is only an aid; review examples, logs and metadata manually.
-- Keep fixtures synthetic. Do not commit generated/deployment configuration, approval
-  manifests, tokens, account or zone IDs, endpoint URLs, state databases, exports,
-  raw reports or notification payloads. Use `config.example.json` as a synthetic
-  reference; keep local files in ignored locations and check `.gitignore` coverage.
-- Preserve observe mode's zero provider writes, separate ledgers and explicit
-  enforcement gates. Describe exactly what was checked and what remains unverified.
-- Do not add paid CI, workflows or automatic publication/deployment without separate
-  maintainer review. This project currently runs no GitHub Actions workflows.
+- Observe mode makes no provider writes. Discovery never enrolls a resource.
+- Preserve unknown, stale, incomplete and approximate evidence. Keep usage estimates,
+  rated charges and subscription commitments separate; account totals and breakdowns
+  are not additive. Cite current official documentation when changing API contracts.
+- Use synthetic examples and fixtures. Keep credentials, real IDs, endpoint URLs,
+  deployment config, databases, raw reports and notification payloads outside Git.
+- Inspect the full diff and new commit history before opening a PR. Automated
+  scanning helps; `.gitignore` does not sanitize tracked files or history.
 
-Maintainers review changes before merging. Follow the
-[code of conduct](CODE_OF_CONDUCT.md). Only contribute material you have the right
-to license under the repository's existing [MIT license](LICENSE); contributions
-are made under that license. No separate CLA or mandatory DCO process is specified.
+## Review and license
 
-The prepared [public branch policy](docs/governance.md) requires PRs and resolved
-threads, blocks default-branch force pushes/deletion and provides no routine bypass.
-It is not active until the owner explicitly launches and verifies it. The solo
-profile requires zero GitHub approvals so an owner's PR is not stranded; manual
-independent review remains a maintainer gate, not enforced human approval or CI.
+Required offline CI and resolved review threads gate merging. A human maintainer
+reviews the diff and validation; sensitive changes to credentials, accounting,
+persistence, installation or actions also need independent review. Agent review
+is evidence for that decision, not human approval. The owner exception to the
+approval-count rule does not bypass required CI. See [branch governance](docs/governance.md)
+for the policy and [publication status](docs/publication-status.md) for verified
+repository settings.
+
+Contribute only material you have the right to license under the [MIT license](LICENSE).
+Contributions use the same license; no CLA or DCO sign-off is required. Changes to
+workflows, release automation or deployment need explicit maintainer review.

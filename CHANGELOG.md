@@ -34,11 +34,11 @@ evidence, independent review and upgrade boundaries.
 - Offline synthetic regression tests, sanitized review records and documentation of
   architecture, configuration, operations, threat boundaries and pending live gates.
 - Contribution, support, conduct and security-reporting guidance; bug/feature and
-  pull request templates; and a publication checklist for a future owner decision.
+  pull request templates; and publication/maintenance procedures.
 
 ### Verification limits
 
 Recorded offline and disposable Linux evidence is described in
 [docs/evidence.md](docs/evidence.md). No live Cloudflare access, production install,
-real alert receipt, 24-hour observation or live cutoff is claimed. The repository
-remains private; this changelog does not announce a public release.
+real alert receipt, 24-hour observation or live cutoff is claimed. Source publication does not establish those live outcomes or announce a
+versioned release.
