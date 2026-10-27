@@ -1,57 +1,42 @@
 # Publication checklist
 
-Preparation is complete only after reviewed files are integrated; publication itself
-requires the owner's explicit decision. Keep source publication separate from live
-deployment/enforcement. This checklist is not a security certificate.
+Use this checklist for source publication. Deployment, provider changes, outreach
+and a versioned release each need their own authorization. Record observed results
+in [publication status](publication-status.md); a checklist is not a settings receipt
+or security certificate.
 
-## Repository preparation
+## Review the source
 
-- Retain [MIT LICENSE](../LICENSE), attribution and an unofficial-project notice.
-- Provide a clear [README](../README.md), complete [installation guide](getting-started.md),
-  [configuration](configuration.md), [operations/rollback](runbook.md) and
-  [troubleshooting](troubleshooting.md). Examples must be synthetic and work against
-  their documented revision. No fictitious tags, badges, releases or live passes.
-- Provide [contribution guidelines](../CONTRIBUTING.md), [support](../SUPPORT.md),
-  [security policy](../SECURITY.md), [community rules](../CODE_OF_CONDUCT.md),
-  [changelog](../CHANGELOG.md), issue/PR templates and [agent instructions](../AGENTS.md).
-- Preserve honest [capabilities](capabilities.md), [threat model](threat-model.md),
-  [development evidence](evidence.md) and unverified live gates. No hard-cap claim.
-- Inspect current files **and all publishable history/branches/tags** for secrets,
-  private configuration, resource IDs, original handoffs, host identities, payment
-  and notification data. `.gitignore` is not retroactive. Check release archives.
-- Inspect private issues, PRs, attachments, comments, security reports and logs that
-  could become visible with the repository. Resolve sensitive material before launch;
-  don't assume changing visibility publishes only the default branch.
-- Resolve independent review findings; verify links, configuration/CLI examples and
-  relevant tests. No `.github/workflows` or paid CI is added by this preparation.
+- Retain the [MIT license](../LICENSE), attribution and unofficial-project notice.
+- Verify [README](../README.md), [installation](getting-started.md), configuration,
+  operations, security reporting and contribution instructions against the selected
+  commit. No fictitious tags, badges, tests or live passes.
+- Inspect all publishable files, history, refs, archives and GitHub conversations,
+  comments, attachments and logs. Resolve private material before visibility changes;
+  `.gitignore` is not retroactive. Keep private deployment evidence outside Git.
+- Resolve independent security/privacy/documentation findings. Run offline tests and
+  verify links and examples. Preserve [capability limits](capabilities.md).
 
-## Owner launch actions — not performed by this change
+## Configure and verify GitHub
 
-1. Confirm the exact integrated `main` revision: implementation PR #1 and documentation
-   PR #2 are merged, but no versioned release is implied. Recheck later changes.
-2. Review the exact commit/history/artifacts to publish and approve the visibility
-   change. Copies may persist: making the repo private again does not recall copies
-   or revoke a leaked credential.
-3. Activate and read back [the prepared branch ruleset](governance.md), then enable
-   ordinary Issues if accepting reports; files/templates alone change no setting.
-4. Enable **private vulnerability reporting** on the public repository, verify
-   [Report a vulnerability](https://github.com/callcthulu/cloudflare-cost-guard/security/advisories/new)
-   works for an eligible non-maintainer, and ensure maintainers receive notifications.
-   This public intake cannot be verified while the repo remains private. Follow
-   [GitHub's setup instructions](https://docs.github.com/en/code-security/security-advisories/working-with-repository-security-advisories/configuring-private-vulnerability-reporting-for-a-repository).
-5. Review reported-content moderation and monitor normal issues. Verify the conduct
-   reporting routes; do not invent a personal contact address to fill a template.
-6. If publishing a release, separately approve version/tag and use
-   [the manual release process](maintaining.md#manual-release-process). Until then,
-   label the project pre-release and install an explicitly reviewed commit.
+1. Confirm the exact reviewed revision and the owner's source-publication decision.
+2. Change visibility, then apply and read back [branch governance](governance.md):
+   required CI, PRs, resolved threads, no direct default-branch pushes, force pushes
+   or deletion. The owner's approval-count exception must not bypass CI.
+3. Enable Issues and private vulnerability reporting. Check the
+   [reporting form](https://github.com/callcthulu/cloudflare-cost-guard/security/advisories/new)
+   and maintainer notification settings. Verify public support/conduct links.
+4. Inspect Actions permissions, fork approval policy and successful required checks.
+   Keep execution read-only and credential-free; no provider or deployment secrets.
+5. Read back security/scanning settings where available without buying a plan.
+   Scanning is additional evidence, not proof of absence of secrets.
+6. Verify anonymous cloning and the normal reviewed PR path. Record configured
+   settings separately from behavior actually observed; do not force-push/delete the
+   default branch as a test.
 
-## Separate deployment gates
+## Keep deployment evidence separate
 
-Use [the launch plan](launch-plan.md) for staged visibility/security setup and
-community positioning. No protections are claimed active while this repository
-remains private on its current plan.
-
-Source readiness proves no real provider probe, deployment, alert receipt, 24-hour
-window or live cutoff. Keep each false/unverified until separately proved on an
-authorized installation. The real executor cannot currently prove its eligibility;
-a public repo must not turn that limitation into an enabled default.
+Source publication proves no live API coverage, production install, alert receipt,
+24-hour observation or cutoff. Preserve those as unverified until separately
+established on an authorized installation. For releases use
+[maintaining](maintaining.md#manual-release-process).
