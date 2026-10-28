@@ -251,6 +251,8 @@ class DeploymentTests(unittest.TestCase):
             target = source / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
+        # Match the installer's canonical source spelling, including Windows 8.3 aliases.
+        source = source.resolve()
         with self.installation(mode='observe', installed=False) as fixture, \
              patch.object(self.installer, '__file__', str(source / 'deploy/install.py')), \
              patch.object(self.installer.sys, 'path', list(self.installer.sys.path)):

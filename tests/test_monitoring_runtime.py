@@ -183,6 +183,33 @@ class RuntimeTests(unittest.TestCase):
         report = self.run_watch(obs, apply=True)
         self.assertFalse(any(i['reason'] == 'coverage_lost' for i in report['issues']))
 
+    def test_stale_account_cannot_establish_history_for_a_disappearing_source(self):
+        from test_monitoring_policy import observation as account_observation
+        obs = account_observation()
+        obs['accounts'][0]['coverage'].append({'source': 'rated_rows', 'status': 'parsed',
+                                              'known_limitation': False})
+        obs['accounts'][0]['snapshot_at'] = (NOW - timedelta(hours=1)).isoformat()
+        self.run_watch(obs, apply=True)
+        obs['accounts'][0]['snapshot_at'] = NOW.isoformat()
+        obs['accounts'][0]['coverage'].pop()
+        report = self.run_watch(obs, apply=True)
+        self.assertFalse(any(i['reason'] == 'coverage_lost' for i in report['issues']))
+        with contextlib.closing(sqlite3.connect(self.root / 'state' / 'watch.sqlite3')) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM coverage_history WHERE scope LIKE '%:rated_rows'").fetchone(), (0,))
+
+    def test_missing_historical_source_cannot_verify_the_coverage_group(self):
+        from test_monitoring_policy import observation as account_observation
+        obs = account_observation()
+        coverage = obs['accounts'][0]['coverage']
+        coverage.append({'source': 'rated_rows', 'status': 'parsed', 'known_limitation': False})
+        self.assertEqual(self.run_watch(obs, apply=True)['queued'], 0)
+        coverage.pop()
+        report = self.run_watch(obs, apply=True)
+        self.assertEqual([i['reason'] for i in report['issues']], ['coverage_lost'])
+        self.assertNotIn('account:' + 'a' * 16 + ':coverage', report['verified_scopes'])
+        self.assertEqual(report['queued'], 1)
+        self.assertEqual(self.run_watch(obs, apply=True)['queued'], 0)
+
     def test_equivalent_decimal_spellings_do_not_trigger_updated_amount(self):
         from test_monitoring_policy import observation as account_observation, row
         obs = account_observation()

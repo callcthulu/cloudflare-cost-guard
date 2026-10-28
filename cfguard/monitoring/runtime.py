@@ -323,6 +323,22 @@ class Store:
             # Only policy-verified scopes establish history: stale snapshots cannot do so.
             self.db.executemany('INSERT OR IGNORE INTO coverage_history VALUES (?)',
                 ((scope,) for scope in assessment['verified_scopes'] if ':coverage:' in scope))
+            current_scopes = (set(assessment['verified_scopes'])
+                | {issue['scope'] for issue in assessment['issues']}
+                | {limitation['scope'] for limitation in assessment['limitations']})
+            for row in self.db.execute('SELECT scope FROM coverage_history'):
+                scope = row['scope']
+                account_scope = scope.split(':coverage:', 1)[0]
+                if scope not in current_scopes and account_scope + ':snapshot' in assessment['verified_scopes']:
+                    # A fresh partial account can omit an old source entirely.
+                    # Missing evidence cannot verify the containing coverage group.
+                    group = account_scope + ':coverage'
+                    if group in assessment['verified_scopes']:
+                        assessment['verified_scopes'].remove(group)
+                    ref = account_scope.removeprefix('account:')
+                    assessment['issues'].append({'key': 'coverage_lost:' + scope + ':' + ref,
+                        'scope': scope, 'reason': 'coverage_lost', 'resource_ref': ref,
+                        'level': 'warning', 'details': {'status': 'unknown'}})
             for limitation in assessment['limitations']:
                 scope, ref = limitation['scope'], limitation['resource_ref']
                 if self.db.execute('SELECT 1 FROM coverage_history WHERE scope=?', (scope,)).fetchone():

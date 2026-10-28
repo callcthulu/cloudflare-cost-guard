@@ -66,6 +66,41 @@ class IntegrationTests(unittest.TestCase):
         self.inventory_failure = False; self.workers.remove('new-unapproved-worker'); self.export(); self.run_watch()
         self.assertEqual([e['kind'] for e in self.sent if e['issue']['reason'] == 'inventory_added'], ['opened', 'recovered'])
 
+    def test_zero_subscription_with_conflicting_plan_identity_cannot_recover_positive(self):
+        self.export(); self.run_watch()
+        zero = fixture.subscription(amount='0')
+        self.source.snapshot['subscriptions'] = [zero, zero | {'plan_id': 'plan-two'}]
+        self.source.save_snapshot(); self.export(); result = self.run_watch()
+        self.assertTrue(any(i['reason'] == 'subscriptions_unknown' for i in result['issues']))
+        with contextlib.closing(sqlite3.connect(self.directory / 'watch' / 'watch.sqlite3')) as db:
+            active = db.execute("SELECT active FROM incidents WHERE key LIKE 'positive_subscription:%'").fetchone()
+        self.assertEqual(active, (1,))
+        self.assertEqual([e['kind'] for e in self.sent if e['issue']['reason'] == 'positive_subscription'], ['opened'])
+        self.source.snapshot['subscriptions'] = [zero]
+        self.source.save_snapshot(); self.export(); self.run_watch()
+        self.assertEqual([e['kind'] for e in self.sent if e['issue']['reason'] == 'positive_subscription'],
+                         ['opened', 'recovered'])
+
+    def test_disappearing_rated_source_alerts_across_restart_until_fresh_restoration(self):
+        self.source.snapshot['coverage']['rated_rows'] = 'parsed'
+        self.source.save_snapshot(); self.export(); self.run_watch()
+        del self.source.snapshot['coverage']['rated_rows']
+        self.source.save_snapshot(); self.export(); lost = self.run_watch()
+        losses = [i for i in lost['issues'] if i['reason'] == 'coverage_lost']
+        self.assertEqual(len(losses), 1)
+        self.assertTrue(losses[0]['scope'].endswith(':coverage:rated_rows'))
+        self.assertEqual(losses[0]['details'], {'status': 'unknown'})
+        self.assertEqual(self.run_watch()['queued'], 0)
+        self.source.snapshot['coverage']['rated_rows'] = 'parsed'
+        self.source.snapshot['collected_at'] = (fixture.NOW - timedelta(hours=1)).isoformat()
+        self.source.save_snapshot(); self.export(); self.run_watch()
+        self.assertFalse(any(e['kind'] == 'recovered' and e['issue']['reason'] == 'coverage_lost'
+                             for e in self.sent))
+        self.source.snapshot['collected_at'] = fixture.STAMP
+        self.source.save_snapshot(); self.export(); self.run_watch()
+        self.assertEqual([e['kind'] for e in self.sent if e['issue']['reason'] == 'coverage_lost'],
+                         ['opened', 'recovered'])
+
     def test_sampler_freshness_never_conceals_guard_outage(self):
         old = (fixture.NOW - timedelta(hours=1)).isoformat()
         with contextlib.closing(sqlite3.connect(self.source.database)) as db, db:

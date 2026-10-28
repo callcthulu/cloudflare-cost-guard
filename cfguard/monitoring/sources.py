@@ -306,7 +306,7 @@ def _snapshot(account, payload):
         return result
     complete = all(row['status'] == 'complete' for row in result['coverage']
                    if row['source'].startswith('subscriptions.'))
-    seen = {}
+    seen, provenance = {}, {}
     for row in rows:
         try:
             safe = _subscription(account['id'], row)
@@ -314,6 +314,12 @@ def _snapshot(account, payload):
             complete = False
             continue
         ref = safe['resource_ref']
+        plans, zones, scopes = provenance.setdefault(ref, (set(), set(), set()))
+        plans.add(row['plan_id'])
+        if row['key']['scope'] == 'zone':
+            zones.add(row['key']['zone_id'])
+        if row.get('plan_scope') is not None:
+            scopes.add(row['plan_scope'])
         candidates = seen.setdefault(ref, [])
         if safe not in candidates:
             candidates.append(safe)
@@ -322,6 +328,15 @@ def _snapshot(account, payload):
             complete = False
         if safe['quality'] != 'good':
             complete = False
+    expected_zones = set(account['expected_zones'])
+    for ref, (plans, zones, scopes) in provenance.items():
+        # Account-list appearances do not assert account ownership. Reconcile the
+        # original endpoint/plan metadata before trusting the sanitized duplicate.
+        if (len(plans) > 1 or len(zones) > 1 or len(scopes) > 1
+                or zones and 'account' in scopes or zones - expected_zones):
+            complete = False
+            for item in seen[ref]:
+                item['quality'] = 'unknown'
     result['subscriptions'] = sorted((item for candidates in seen.values() for item in candidates),
                                      key=lambda row: row['resource_ref'])
     result['subscriptions_status'] = 'complete' if complete else 'unknown'

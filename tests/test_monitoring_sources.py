@@ -168,6 +168,51 @@ class SourcesTests(unittest.TestCase):
         self.assertEqual(row['subscriptions_status'], 'unknown')
         self.assertCountEqual([item['amount'] for item in row['subscriptions']], ['5.50', '0'])
 
+    def test_original_subscription_provenance_conflicts_remain_unknown(self):
+        from copy import deepcopy
+        from cfguard.monitoring.policy import assess
+        account = subscription(amount='0')
+        zone = deepcopy(account)
+        zone['key'].update(scope='zone', zone_id=ZONE)
+        zone['plan_scope'] = 'zone'
+        other_zone = deepcopy(zone)
+        other_zone['key']['zone_id'] = 'c' * 32
+        self.config['accounts'][0]['expected_zones'].append('c' * 32)
+        self.snapshot['coverage']['subscriptions.zone:' + 'c' * 32] = 'complete'
+        variants = [
+            [account, account | {'plan_id': 'plan-two'}],
+            [account, account | {'plan_scope': 'zone'}],
+            [zone | {'plan_scope': 'account'}],
+            [zone, other_zone],
+            [subscription(), subscription() | {'plan_id': 'plan-two'}],
+        ]
+        for rows in variants:
+            with self.subTest(rows=rows):
+                self.snapshot['subscriptions'] = rows + [subscription('unrelated', '7')]
+                self.save_snapshot()
+                observed = self.collect()
+                output = observed['accounts'][0]
+                self.assertEqual(output['subscriptions_status'], 'unknown')
+                assessed = assess(observed, NOW)
+                self.assertFalse(any(s.endswith(':subscriptions') for s in assessed['verified_scopes']))
+                positives = [i for i in assessed['issues'] if i['reason'] == 'positive_subscription']
+                self.assertEqual([i['details']['amount'] for i in positives], ['7'])
+                for private in (ACCOUNT, ZONE, 'plan-one', 'plan-two', 'PRIVATE'):
+                    self.assertNotIn(private, json.dumps(observed))
+
+    def test_compatible_account_and_zone_appearances_deduplicate(self):
+        from copy import deepcopy
+        account = subscription()
+        account['plan_scope'] = None
+        zone = deepcopy(account)
+        zone['key'].update(scope='zone', zone_id=ZONE)
+        zone['plan_scope'] = 'zone'
+        self.snapshot['subscriptions'] = [account, zone, deepcopy(zone)]
+        self.save_snapshot()
+        output = self.collect()['accounts'][0]
+        self.assertEqual(output['subscriptions_status'], 'complete')
+        self.assertEqual([r['amount'] for r in output['subscriptions']], ['5.50'])
+
     def test_missing_subscription_coverage_is_unknown_even_for_empty_rows(self):
         self.snapshot['subscriptions'] = []
         self.snapshot['coverage'] = {}

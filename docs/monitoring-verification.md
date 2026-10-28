@@ -8,11 +8,15 @@ they do not verify this optional sampler/watcher on an operator's hosts.
 ## Offline verification
 
 On 28 October 2026, Windows/Python 3.14.7 ran the integrated full suite:
-344 tests, 341 passed and three platform skips, in 15.110 seconds. The added
-monitoring suite contributes 92 tests; native integration additionally exercises a
+350 tests, 347 passed and three platform skips after independent review fixes.
+The monitoring suite contributes 99 tests, including native integration exercising a
 real guard runner/schema-6 state file and confirms read-only positive-fee assessment.
 Installer tests verify nested module delivery, destination/hash safety and no
 automatic monitoring configuration, service activation or extra token reads.
+Review regressions verify contradictory subscription provenance remains unknown,
+and disappearing coverage sources persist as loss incidents until affirmative
+restoration, including across watcher restarts. Windows installer fixtures resolve
+source paths consistently with the production installer.
 
 Run from the repository root without provider credentials or external messaging:
 
