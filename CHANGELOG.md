@@ -5,6 +5,13 @@ production-readiness certification is claimed.
 
 ## [Unreleased]
 
+### Sharing preparation
+
+- Credential-free synthetic monitoring demo with temporary state and simulated
+  delivery; shows incident deduplication, unknown evidence and affirmative recovery.
+- Monitoring-led README/About positioning and prepared alpha prerelease notes.
+  No live deployment or external announcement follows from this preparation.
+
 ### Fixed
 
 - Malformed HTTP responses now produce sanitized, bounded transport failures:
