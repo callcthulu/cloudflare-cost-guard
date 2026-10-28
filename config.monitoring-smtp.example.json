@@ -1,0 +1,9 @@
+{
+  "host": "smtp.example.invalid",
+  "port": 465,
+  "tls": "ssl",
+  "username": "synthetic-user",
+  "password": "SYNTHETIC-REPLACE-OUTSIDE-GIT",
+  "from": "watch@example.invalid",
+  "to": "owner@example.invalid"
+}

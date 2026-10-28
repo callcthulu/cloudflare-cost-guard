@@ -49,3 +49,24 @@ HTTPS clients refuse redirects and environment proxies. Alert text uses sanitize
 fields and suppresses mentions. Provider acceptance does not prove human receipt,
 and ambiguous timeouts can cause duplicate messages. A compromised service identity
 can read its notification credentials; these controls do not contain host compromise.
+
+Optional [independent monitoring](monitoring.md) adds two boundaries. The sampler
+can read guard schema-6 SQLite and approved read tokens, so it belongs inside the
+guard host's trusted service boundary. It opens guard state read-only and exports
+only hashed references, bounded evidence and timestamps into its own private
+directory. Hashing reduces disclosure; references remain correlatable and should
+not be treated as anonymous public data. A compromised sampler can falsify its
+observations; the watcher cannot attest to the guard host's integrity.
+
+The watcher needs only a local sanitized file or a narrow SSH read identity, plus
+independent SMTP credentials. SSH uses BatchMode, strict known-host verification
+and a fixed bounded read command; no arbitrary remote command hook or public health
+endpoint is provided. Provision forced-command keys without forwarding and protect
+configuration, key/known-host files and their ancestors against replacement. The
+watcher has no need for Cloudflare credentials or guard SQLite access. Its own
+SQLite stores incidents/delivery and never authorizes provider actions. SMTP
+destination changes cancel historical pending deliveries rather than redirecting
+them; acceptance still does not prove human receipt. A shared host or shared failed
+mail dependency defeats independence. The watcher itself requires an existing
+external uptime check or an explicitly accepted blind spot. New resources can incur
+charges between polls; monitoring adds no financial cap or all-product coverage.

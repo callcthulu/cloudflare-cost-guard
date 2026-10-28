@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "ssh_profile": "approved-guard-readonly",
+  "expected_account_refs": ["1e6f25af5fc86585"],
+  "state_dir": "/var/lib/cloudflare-cost-guard-monitor-watch",
+  "smtp_file": "/etc/cloudflare-cost-guard-monitor/smtp.json",
+  "policy": {"max_age_seconds": 900, "future_tolerance_seconds": 60, "backlog_age_seconds": 900},
+  "reminder_seconds": 86400
+}

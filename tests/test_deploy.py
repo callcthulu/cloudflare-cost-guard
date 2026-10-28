@@ -231,3 +231,98 @@ class DeploymentTests(unittest.TestCase):
             self.assertEqual(json.loads(fixture.mutations[str(self.installer.ETC/'config.json')])['mode'], 'observe')
             self.assertFalse(any(args[0] == 'systemctl' for args in fixture.checks))
             self.assertEqual(fixture.commands, [('systemctl', 'daemon-reload')])
+
+    @contextlib.contextmanager
+    def nested_installation(self):
+        """Synthetic package tree, with manual monitoring assets outside code."""
+        source = self.root / 'source'
+        files = {'cfguard/__main__.py': b'# main\n',
+                 'cfguard/policy.py': b'# cutoff policy\n',
+                 'cfguard/monitoring/__init__.py': b'# monitoring\n',
+                 'cfguard/monitoring/__main__.py': b'# monitoring main\n',
+                 'cfguard/monitoring/policy.py': b'# monitoring policy\n',
+                 'cfguard/monitoring/notes.txt': b'not executable package code',
+                 'deploy/cloudflare-cost-guard.service': b'# guard service\n',
+                 'deploy/cloudflare-cost-guard.timer': b'# guard timer\n',
+                 'deploy/cfguard-monitor-fixture.service': b'# manual service\n',
+                 'deploy/cfguard-monitor-fixture.timer': b'# manual timer\n',
+                 'config.monitoring.example.json': b'{"manual": true}'}
+        for relative, data in files.items():
+            target = source / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+        with self.installation(mode='observe', installed=False) as fixture, \
+             patch.object(self.installer, '__file__', str(source / 'deploy/install.py')), \
+             patch.object(self.installer.sys, 'path', list(self.installer.sys.path)):
+            fixture.source = source
+            yield fixture
+
+    def test_nested_package_installs_relative_paths_without_scheduling_monitoring(self):
+        real_write_owned = self.installer.write_owned
+        # Installer paths are rooted without a Windows drive, like its Linux paths.
+        installed = Path(self.root.as_posix()[len(self.root.drive):]) / 'installed'
+        with self.nested_installation() as fixture, \
+             patch.object(self.installer, 'CODE', installed / 'code'), \
+             patch.object(self.installer, 'ETC', installed / 'etc'), \
+             patch.object(self.installer, 'UNITS', installed / 'units'), \
+             patch.object(self.installer, 'write_owned', real_write_owned), \
+             patch.object(self.installer.os, 'chown', create=True):
+            self.installer.install(fixture.config)
+            code = self.installer.CODE / 'cfguard'
+            self.assertEqual((code / 'policy.py').read_bytes(), b'# cutoff policy\n')
+            for name, expected in (('__init__.py', b'# monitoring\n'),
+                                   ('__main__.py', b'# monitoring main\n'),
+                                   ('policy.py', b'# monitoring policy\n')):
+                target = code / 'monitoring' / name
+                self.assertTrue(target.is_file(), f'missing nested package file: {name}')
+                self.assertEqual(target.read_bytes(), expected)
+                self.assertEqual(fixture.marker['files'][target.relative_to('/').as_posix()],
+                                 hashlib.sha256(expected).hexdigest())
+            self.assertFalse((code / 'monitoring/notes.txt').exists())
+            self.assertEqual({p.name for p in self.installer.UNITS.iterdir()},
+                             {'cloudflare-cost-guard.service', 'cloudflare-cost-guard.timer'})
+            self.assertEqual({p.name for p in self.installer.ETC.iterdir()}, {'config.json'})
+            self.assertEqual([args[0] for args in fixture.checks], ['runuser'])
+            self.assertEqual(fixture.commands, [('systemctl', 'daemon-reload')])
+
+    def test_foreign_nested_destination_refused_before_any_writes(self):
+        destination = self.installer.CODE / 'cfguard/monitoring/policy.py'
+        real_exists = type(destination).exists
+        with self.nested_installation() as fixture:
+            def exists(path):
+                return path == destination or real_exists(path)
+            with patch.object(type(destination), 'exists', exists):
+                with self.assertRaises(self.installer.InstallError):
+                    self.installer.install(fixture.config)
+            self.assertEqual(fixture.mutations, {})
+            self.assertEqual(fixture.commands, [])
+
+    def test_unsafe_nested_source_or_destination_refused_before_any_writes(self):
+        for boundary in ('source', 'destination'):
+            with self.subTest(boundary=boundary), self.nested_installation() as fixture:
+                unsafe = ((fixture.source / 'cfguard') if boundary == 'source'
+                          else (self.installer.CODE / 'cfguard')) / 'monitoring/policy.py'
+                def safe_path(path, *args):
+                    if path == unsafe:
+                        raise self.installer.InstallError('unsafe nested path')
+                with patch.object(self.installer, 'safe_path', safe_path):
+                    with self.assertRaises(self.installer.InstallError):
+                        self.installer.install(fixture.config)
+                self.assertEqual(fixture.mutations, {})
+                self.assertEqual(fixture.commands, [])
+
+    def test_nested_owned_files_verify_before_removal_and_preserve_foreign_siblings(self):
+        nested = self.root / 'cfguard/monitoring/policy.py'
+        nested.parent.mkdir(parents=True)
+        nested.write_text('owned', encoding='utf-8')
+        foreign = nested.with_name('operator-notes.txt')
+        foreign.write_text('keep', encoding='utf-8')
+        files = {**self.manifest, 'cfguard/monitoring/policy.py': self.manifest['owned.txt']}
+        nested.write_text('modified', encoding='utf-8')
+        with self.assertRaises(self.installer.InstallError):
+            self.installer.remove_files(self.root, files)
+        self.assertTrue(self.file.exists())
+        nested.write_text('owned', encoding='utf-8')
+        self.installer.remove_files(self.root, files)
+        self.assertFalse(nested.exists())
+        self.assertEqual(foreign.read_text(), 'keep')

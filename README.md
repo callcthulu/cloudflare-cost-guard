@@ -72,9 +72,12 @@ Exit codes: `0` completed, `2` invalid config, `3` unknown/collection/runtime
 failure, `4` warning/incident, `5` action or pending/failed notification. For a run,
 precedence is **5 > 4 > 3 > 0**; inspect JSON as well as the exit code.
 
-Keep credentials, real configuration and deployment evidence outside Git. The host
-needs its own independent outage monitoring. Offline tests do not prove live
-provider access, notification delivery or a maximum bill.
+Keep credentials, real configuration and deployment evidence outside Git. Optional
+[independent monitoring](docs/monitoring.md) adds a read-only sampler and a watcher
+on another host: guard outages, delayed notifications, positive subscription fees
+and Worker/zone inventory drift. Use `python -B -m cfguard.monitoring`; the main
+installer does not configure or start these optional services. Offline tests do
+not prove live provider access, notification delivery or a maximum bill.
 
 The [cutoff evidence](docs/automatic-cutoff-evidence.md) records regression tests,
 independent security review and disposable Linux lifecycle verification.

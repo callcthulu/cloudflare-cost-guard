@@ -69,10 +69,13 @@ Have the owner approve an independently hosted check in an existing monitoring
 system. It should detect absent runs, old `last_finished`, old
 `last_collection_success`, unknown collection and growing pending notifications.
 Choose thresholds with the five-minute cadence, 240-second maximum run and
-660-second local heartbeat setting in mind. How the external system obtains
-sanitized evidence is an operator integration; this repository installs no
-external heartbeat or public health endpoint. Do not expose SQLite, secret files
-or a raw private status mapping. A local timer cannot alert if its host is down.
+660-second local heartbeat setting in mind. The optional
+[`python -B -m cfguard.monitoring` sampler/watcher](monitoring.md) provides sanitized
+evidence and an independently hosted check. Its templates are separate: the main
+guard installer does not install, configure or enable external monitoring, and
+existing installations are unchanged until it is explicitly set up. No public
+health endpoint is provided. Do not expose SQLite, secret files or a raw private
+status mapping. A local timer cannot alert if its host is down.
 
 Only after explicit install, receiver and scheduling decisions:
 

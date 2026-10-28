@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "guard_database": "/var/lib/cloudflare-cost-guard/guard.sqlite3",
+  "accounts": [{
+    "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "read_token_file": "/etc/cloudflare-cost-guard/secrets/read.token",
+    "expected_workers": [],
+    "expected_zones": ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+    "known_limitations": {
+      "billing_account_coverage": "unavailable",
+      "workers.requests": "approximate"
+    }
+  }]
+}

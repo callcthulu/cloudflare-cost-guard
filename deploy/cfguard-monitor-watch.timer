@@ -1,0 +1,11 @@
+[Unit]
+Description=Check remote guard health every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=5s
+Unit=cfguard-monitor-watch.service
+
+[Install]
+WantedBy=timers.target
