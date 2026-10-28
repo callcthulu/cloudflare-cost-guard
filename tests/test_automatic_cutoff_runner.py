@@ -41,8 +41,9 @@ class CutoffRunnerTests(unittest.TestCase):
             payload=json.loads(body)
             text=payload.get('text',payload.get('content',''))
             cutoff='reason_code: cutoff_result' in text
-            posts.append(('slack' if 'slack.com' in url else 'discord',cutoff))
-            if 'slack.com' in url:return 200,b'ok'
+            channel='slack' if urlsplit(url).hostname=='hooks.slack.com' else 'discord'
+            posts.append((channel,cutoff))
+            if channel=='slack':return 200,b'ok'
             failures=sum(channel=='discord' and is_cutoff for channel,is_cutoff in posts)
             return (503,b'{}') if cutoff and failures==1 else (200,b'{"id":"987654"}')
         with patch('cfguard.notify._http_post',side_effect=transport):
