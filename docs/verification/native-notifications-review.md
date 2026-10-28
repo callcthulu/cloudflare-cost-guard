@@ -35,6 +35,17 @@ SHA-256: `e0cae5ea324c0972c53b3d55ba983246dcb9bee2faa6c8218f85418fcc61946f`.
 See [per-file hashes](native-notifications-source.sha256) and
 [delivery evidence](../native-notifications-evidence.md).
 
+Final assembly: CodeQL flagged two substring URL comparisons in the injected
+synthetic test transport. The lead replaced them with exact parsed-hostname
+matching. The reviewer independently compared all 41 current files against both
+the original manifest and Linux archive; only that test file changed. Runtime,
+installer and examples are identical. All 19 integration tests passed in 4.374
+seconds. There was no alert dismissal and no new blocking finding.
+Original Linux-tested manifest remains untouched. The
+[delivery hashes](native-notifications-delivery-source.sha256) describe the final
+test fixture, with review JSON manifest SHA-256
+`ef36fcbc38bca7f0cb6dee03624b3fc48629ec766b9b7193483b9b79a7574ab8`.
+
 All provider/receiver behavior used injected transports and synthetic files. Source
 review and offline checks do not establish live acceptance, human receipt, provider
 cutoff eligibility, exactly-once delivery or a maximum invoice.

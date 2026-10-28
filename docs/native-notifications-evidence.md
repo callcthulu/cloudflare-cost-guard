@@ -16,6 +16,7 @@ runtime, tests, installer or examples. This pin does not authorize a live send.
 | --- | --- |
 | Windows Python 3.14.7 | 242 tests: 239 passed, 3 platform skips, zero failures; 14.195 seconds |
 | Independent reviewer's Windows run | 242 tests: 239 passed, 3 skips; 14.601 seconds |
+| Final Windows run after test-transport correction | 242 tests: 239 passed, 3 skips; 17.105 seconds |
 | Disposable Ubuntu 24.04, Python 3.12.3 | 242 passed, zero skips/failures; 16.209 seconds |
 | Booted systemd 255 lifecycle | Installation twice, clean unit verification, two scheduled processes, overlap protection, durable latch, secret isolation and uninstall retention passed |
 | Installed native inspection | All four previews and `show-policy` passed as the service identity with all six protected files unreadable and no external network routes |
@@ -52,6 +53,18 @@ matched before and after Linux tests. Original review JSON manifest SHA-256:
 `e0cae5ea324c0972c53b3d55ba983246dcb9bee2faa6c8218f85418fcc61946f`.
 Linux manifest SHA-256:
 `028daeed59551cde962f14c14d86c59880f688eec718b1628c08a7870bd38012`.
+
+CI then flagged two loose URL substring checks in the injected synthetic
+notification transport. They were replaced with exact parsed-hostname matching.
+Independent assembly review compared the Linux archive and all 41 files: only
+`tests/test_automatic_cutoff_runner.py` changed; runtime, deployment and examples
+are identical. The reviewer reran all 19 integration tests successfully, and the
+lead reran the full Windows suite. The [final Windows log](verification/native-notifications-final-windows-tests.txt)
+and [delivery source hashes](verification/native-notifications-delivery-source.sha256)
+record the refined test fixture. Final-commit CI verifies that committed snapshot
+separately from the original Linux lifecycle result. The original Linux receipt,
+logs and source hashes above remain unchanged. Delivery review JSON manifest SHA-256:
+`ef36fcbc38bca7f0cb6dee03624b3fc48629ec766b9b7193483b9b79a7574ab8`.
 
 The [Linux result](verification/native-notifications-linux.json) contains actual
 UTC timestamps and installed inspection results. Root lifecycle operations ran
