@@ -95,7 +95,7 @@ maximum overshoot is guaranteed. An independent host heartbeat is still needed.
 ## Prepare while remaining in observe mode
 
 Start with [getting started](getting-started.md), using reviewed source
-`2d530d674e330473208bc75169289af9467ceca0`. It includes native notifications,
+`cc1ea53f0e0b0fcf5c6d1936a78a0c599f915d85`. It includes native notifications,
 warnings, optional cutoff and `show-policy`; see [delivery evidence](native-notifications-evidence.md). Do not
 substitute a moving branch. Later guide-only updates leave this runtime pin intact.
 If installed code predates the feature, first upgrade it in observe mode using the

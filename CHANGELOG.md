@@ -5,6 +5,15 @@ production-readiness certification is claimed.
 
 ## [Unreleased]
 
+### Fixed
+
+- Malformed HTTP responses now produce sanitized, bounded transport failures:
+  Cloudflare reads retain retry limits, mutations remain one attempt with read-only
+  reconciliation, public probes stay unknown, and legacy webhook failures back off.
+- Setup/troubleshooting now matches native notification channels, the isolated test
+  command, per-destination delivery limits, schema 6 and stopped observe disarming.
+  See the [solution audit](docs/solution-audit-2026-10-28.md).
+
 ### Added
 
 - Native email (TLS SMTP), Telegram, Slack and Discord destinations alongside the
