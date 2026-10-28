@@ -1,0 +1,21 @@
+[Unit]
+Description=Read-only Cloudflare guard companion sampler
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=cloudflare-cost-guard
+Group=cloudflare-cost-guard
+WorkingDirectory=/opt/cloudflare-cost-guard
+ExecStart=/usr/bin/python3 -B -m cfguard.monitoring sample --config /etc/cloudflare-cost-guard-monitor/sample.json --output /var/lib/cloudflare-cost-guard-monitor/observation.json
+TimeoutStartSec=180
+UMask=0077
+StateDirectory=cloudflare-cost-guard-monitor
+StateDirectoryMode=0700
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadOnlyPaths=/var/lib/cloudflare-cost-guard /etc/cloudflare-cost-guard

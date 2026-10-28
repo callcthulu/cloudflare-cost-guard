@@ -1,0 +1,20 @@
+[Unit]
+Description=Independent Cloudflare guard companion watcher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=cfguard-watch
+Group=cfguard-watch
+WorkingDirectory=/opt/cloudflare-cost-guard
+ExecStart=/usr/bin/python3 -B -m cfguard.monitoring watch --config /etc/cloudflare-cost-guard-monitor/watch.json --apply --send
+TimeoutStartSec=120
+UMask=0077
+StateDirectory=cloudflare-cost-guard-monitor-watch
+StateDirectoryMode=0700
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

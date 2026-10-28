@@ -16,6 +16,16 @@ production-readiness certification is claimed.
 
 ### Added
 
+- Optional integrated `cfguard.monitoring` sampler/watcher for guard liveness,
+  delayed notifications, every validated positive USD subscription row, and
+  explicit Worker/zone inventory baselines. Sanitized observations can cross a
+  narrow SSH read boundary to an independent host. Default watch is stateless
+  preview; explicit local persistence adds bounded reminders, coverage-loss
+  history, recovery and destination-bound verified-TLS SMTP delivery. Separate
+  systemd templates are supplied but the main installer does not activate them.
+  See [monitoring setup](docs/monitoring.md) and its
+  [verification boundaries](docs/monitoring-verification.md).
+
 - Native email (TLS SMTP), Telegram, Slack and Discord destinations alongside the
   backward-compatible generic JSON receiver; configurable combinations, incident
   recipient snapshots and independent retry/cancellation state per destination.

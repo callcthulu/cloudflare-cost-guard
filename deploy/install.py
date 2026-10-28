@@ -208,7 +208,7 @@ def install(config_path, *, allow_enforce=False):
     safe_path(package)
     for original in package.rglob('*'):
         safe_path(original)
-    sources = sorted(package.glob('*.py'))
+    sources = sorted(package.rglob('*.py'))
     if not sources or not (package / '__main__.py').is_file():
         raise InstallError('incomplete source package')
     for suffix in ('service', 'timer'):
@@ -246,7 +246,7 @@ def install(config_path, *, allow_enforce=False):
         result = subprocess.run(['runuser', '-u', NAME, '--', 'test', '-r', str(secret)], capture_output=True)
         if result.returncode:
             raise InstallError('service cannot read a configured secret')
-    payloads = [(CODE / 'cfguard' / p.name, read_source(p), 0o644) for p in sources]
+    payloads = [(CODE / 'cfguard' / p.relative_to(package), read_source(p), 0o644) for p in sources]
     payloads += [(UNITS / f'{NAME}.{suffix}', read_source(source / 'deploy' / f'{NAME}.{suffix}'), 0o644) for suffix in ('service', 'timer')]
     payloads.append((ETC / 'config.json', config_path.read_bytes(), 0o640))
     for destination, _, _ in payloads:

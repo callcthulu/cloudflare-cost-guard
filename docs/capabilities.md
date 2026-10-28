@@ -26,6 +26,25 @@ bill or a substitute for evaluating native controls. No billing settings are cha
 | Worker deletion | One DELETE of exact script with fixed `force=false` | Destructive version 2 armed budget action; independent restore source and explicit owner acknowledgements. Read-only authenticated absence confirms script removal, not a final bill. |
 | Public probe | HTTPS GET without credentials | Only `*.workers.dev`, no redirects. A 2xx means reachable; other responses are unknown. Arbitrary Worker-generated 403/404 responses never prove provider cutoff. |
 
+## Optional independent monitoring
+
+[`cfguard.monitoring`](monitoring.md) adds a read-only view of the guard's current
+schema-6 SQLite state and bounded GET-only Worker/zone inventory. A sampler on the
+guard host exports a sanitized observation; a watcher on another host detects
+stale/missing runs, delayed notification backlog, inventory drift and validated
+positive USD subscription rows, including allowed plans. Subscription rows remain
+separate; they are never summed into a complete bill. Explicit private baselines
+do not enroll resources or expand the cutoff scope.
+
+Complete inventories support drift assessment only for Workers and zones. Missing,
+incomplete or account-mismatched data stays unknown. A configured exact known
+coverage limitation remains visible, and persistent watch detects loss of formerly
+affirmative coverage. Default watch is stateless preview; `--apply` persists its
+own incidents and `--apply --send` can send due monitoring emails. It never runs
+the guard, writes guard state or performs Cloudflare mutations. The main installer
+does not enable the optional templates. See the [schema](monitoring-schema.md)
+and [verification limits](monitoring-verification.md).
+
 ## Contract and pagination details
 
 The [Workers tutorial](https://developers.cloudflare.com/analytics/graphql-api/tutorials/querying-workers-metrics/)
