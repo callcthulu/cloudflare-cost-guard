@@ -95,8 +95,8 @@ maximum overshoot is guaranteed. An independent host heartbeat is still needed.
 ## Prepare while remaining in observe mode
 
 Start with [getting started](getting-started.md), using reviewed source
-`ba00e2a1d6790654219a3d141015de2b2580daf8`. It includes warnings, optional cutoff
-and `show-policy`; see [delivery evidence](budget-alerts-evidence.md). Do not
+`63ae782e95e3b8360541b0b539a4dc29e0c9384d`. It includes native notifications,
+warnings, optional cutoff and `show-policy`; see [delivery evidence](native-notifications-evidence.md). Do not
 substitute a moving branch. Later guide-only updates leave this runtime pin intact.
 If installed code predates the feature, first upgrade it in observe mode using the
 [reviewed-source update procedure](runbook.md#configuration-updates-upgrades-and-token-rotation).

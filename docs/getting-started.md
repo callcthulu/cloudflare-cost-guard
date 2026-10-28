@@ -65,7 +65,7 @@ credential. Do not embed tokens in clone URLs, commands or shell history.
 ```sh
 git clone https://github.com/callcthulu/cloudflare-cost-guard.git "$HOME/cloudflare-cost-guard-review"
 cd "$HOME/cloudflare-cost-guard-review"
-DELIVERY_COMMIT=ba00e2a1d6790654219a3d141015de2b2580daf8
+DELIVERY_COMMIT=63ae782e95e3b8360541b0b539a4dc29e0c9384d
 test "${#DELIVERY_COMMIT}" -eq 40 || exit 1
 git fetch origin "$DELIVERY_COMMIT" || exit 1
 git switch --detach "$DELIVERY_COMMIT" || exit 1
@@ -74,10 +74,10 @@ git rev-parse HEAD
 /usr/bin/python3 -B -m unittest discover -s tests -v
 ```
 
-This full SHA pins the independently reviewed source including multiple budget
-warnings and optional automatic Worker cutoff. Initial installation uses observe
+This full SHA pins the independently reviewed source including native notifications,
+multiple budget warnings and optional automatic Worker cutoff. Initial installation uses observe
 mode; arming is a separate step in the [cutoff guide](automatic-cutoff.md).
-See [budget-alert evidence](budget-alerts-evidence.md)
+See [native-notification evidence](native-notifications-evidence.md)
 for offline, disposable Linux and live-verification boundaries. Later documentation
 commits may update this guide without changing the pinned runtime.
 Retain `DELIVERY_COMMIT` for the export below.
@@ -87,7 +87,7 @@ repository history; do not silently fall back to a moving branch.
 
 Review at least `cfguard/`, `deploy/install.py`, the two systemd units, the
 [capability matrix](capabilities.md), [threat model](threat-model.md) and
-[budget-alert evidence](budget-alerts-evidence.md). Tests are offline and use no provider credentials.
+[native-notification evidence](native-notifications-evidence.md). Tests are offline and use no provider credentials.
 
 ## 3. Move approved source under administrator control
 
