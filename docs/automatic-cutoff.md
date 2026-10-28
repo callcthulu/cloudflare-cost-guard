@@ -94,12 +94,10 @@ maximum overshoot is guaranteed. An independent host heartbeat is still needed.
 
 ## Prepare while remaining in observe mode
 
-Start with [getting started](getting-started.md), using reviewed feature source
-for the warning extension; its final reviewed delivery pin is pending. The earlier
-cutoff commit `9c6e16b817e0f3541c8fceb986342dd83d6535f3` does not support warnings
-or `show-policy`. Do not deploy this extension using that older pin or a moving
-branch. See [delivery evidence](automatic-cutoff-evidence.md) for the historical
-cutoff review and its unverified live gates; it does not verify this extension.
+Start with [getting started](getting-started.md), using reviewed source
+`ba00e2a1d6790654219a3d141015de2b2580daf8`. It includes warnings, optional cutoff
+and `show-policy`; see [delivery evidence](budget-alerts-evidence.md). Do not
+substitute a moving branch. Later guide-only updates leave this runtime pin intact.
 If installed code predates the feature, first upgrade it in observe mode using the
 [reviewed-source update procedure](runbook.md#configuration-updates-upgrades-and-token-rotation).
 

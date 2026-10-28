@@ -19,10 +19,9 @@ need a Worker or cutoff target.
 
 ## Copyable prompt
 
-The warning extension needs a final reviewed delivery pin; it is pending here.
-The earlier cutoff pin `9c6e16b817e0f3541c8fceb986342dd83d6535f3` lacks warnings
-and `show-policy`. Replace the placeholder only with the extension's reviewed
-commit before deployment; do not invent a SHA or deploy a moving branch.
+The pin below includes independently reviewed multiple warnings, optional cutoff
+and offline policy inspection. Review [delivery evidence](budget-alerts-evidence.md)
+and current operator scope before use; do not deploy a moving branch.
 Replace the bracketed host reference with your
 approved profile. The prompt does not grant live-install or notification permission
 by itself.
@@ -30,7 +29,7 @@ by itself.
 ```text
 Prepare Cloudflare Cost Guard for my explicitly enrolled resources.
 Repository: https://github.com/callcthulu/cloudflare-cost-guard
-Reviewed source commit: [FINAL REVIEWED WARNING-EXTENSION COMMIT REQUIRED]
+Reviewed source commit: ba00e2a1d6790654219a3d141015de2b2580daf8
 Existing host connection profile: [approved profile reference, no key contents]
 
 Read AGENTS.md, README.md, docs/getting-started.md, docs/capabilities.md,

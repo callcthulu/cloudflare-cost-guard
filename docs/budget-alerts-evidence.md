@@ -5,6 +5,10 @@ contextual priority alerts, offline `show-policy` inspection and current policie
 in `status`. See [configuration and editing](budget-alerts.md). Warning edits leave
 existing cutoff approvals valid; changing cutoff semantics requires fresh approval.
 
+Reviewed implementation commit: `ba00e2a1d6790654219a3d141015de2b2580daf8`.
+Later source-pin/evidence documentation updates do not change its reviewed runtime,
+tests, installer or examples. This is a source pin, not production approval.
+
 ## Verification
 
 | Check | Actual result |
