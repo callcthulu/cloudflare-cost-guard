@@ -156,8 +156,9 @@ Optional resource enforcement fields are `permitted_action`,
 `executor_token_file`, `approved_manifest_file` and `approved_manifest_digest`
 (lowercase SHA-256). Actions are `delete_worker` or `disable_worker_endpoints`,
 only for explicitly enrolled Workers. Deletion always requires a resource budget.
-Enforce mode requires an action, a separate writer path and pinned approval for
-each resource. Initial installation stays observe-only with no writer references.
+In enforce mode, each resource with a hard limit requires an action, a separate
+writer path and pinned approval. Warning-only budget resources may coexist with
+armed resources, but must omit all action, writer and manifest fields. Initial installation stays observe-only with no writer references.
 These fields alone do not establish owner approval or provider permissions.
 
 ## Automatic cutoff budget
@@ -170,7 +171,8 @@ no writer or approval references.
 
 | Budget field | Meaning |
 | --- | --- |
-| `hard_limit_usd` | Positive Decimal string; trigger for the approved action, not a maximum invoice. Account currency must be USD. |
+| `hard_limit_usd` | Optional/null, or one positive Decimal string. A value enables a cutoff policy; it is an action trigger, not a maximum invoice. Account currency must be USD. |
+| `warnings` | Optional array, default `[]`. Each entry has exactly one positive Decimal-string `usd` or `percent`. USD values must be below an existing hard limit. Percentage values must be greater than 0 and less than 100 and require a hard limit. Effective USD thresholds must be unique. |
 | `source` | `workers_usage_estimate` or `account_rated_observed`. |
 | `request_usd_per_million` | Positive Decimal request rate for the usage source. |
 | `cpu_usd_per_million_ms` | Positive Decimal CPU-millisecond rate for the usage source. |
@@ -188,6 +190,13 @@ trigger to an explicitly chosen Worker, without attributing its costs to that Wo
 Both sources remain partial/unknown below budget. No R2/D1/Queues budget actions
 are implemented; unsupported product/action combinations are rejected.
 
-The version 2 approval digest covers identity, action, budget semantics and account
-billing day/currency. Quality acceptance alone never arms a write. See
+No hard limit means warning-only monitoring and no provider write for that resource.
+Only USD warnings are valid without a limit; `warnings: []` with a null/omitted
+limit tracks the signal without warnings or cutoff. See [budget alerts](budget-alerts.md)
+for examples, notification behavior and configuration updates.
+
+The version 2 approval digest covers identity, action, cutoff/source/pricing/quality
+semantics and account billing day/currency. Editing warnings alone does not invalidate
+the cutoff approval; changing a hard limit or the other covered semantics does.
+Quality acceptance alone never arms a write. See
 [the complete procedure](automatic-cutoff.md#review-and-pin-approval).

@@ -6,10 +6,10 @@ import os
 import re
 import stat
 from datetime import date, datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, DecimalException, InvalidOperation
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
-from .models import AccountConfig, Config, GuardBudget, Price, ResourceConfig, ResourceKey, Threshold
+from .models import AccountConfig, BudgetWarning, Config, GuardBudget, Price, ResourceConfig, ResourceKey, Threshold
 
 
 class ConfigError(ValueError):
@@ -101,8 +101,30 @@ def _pairs(pairs):
 
 def _guard_budget(raw, account, mode):
     fields = {'hard_limit_usd', 'source', 'request_usd_per_million', 'cpu_usd_per_million_ms',
-              'cpu_ms_per_request', 'pricing_source', 'pricing_as_of', 'accept_approximate', 'accept_partial'}
-    _object(raw, fields, {'hard_limit_usd', 'source'})
+              'cpu_ms_per_request', 'pricing_source', 'pricing_as_of', 'accept_approximate', 'accept_partial', 'warnings'}
+    _object(raw, fields, {'source'})
+    hard_limit = _decimal(raw['hard_limit_usd'], True) if raw.get('hard_limit_usd') is not None else None
+    warnings = []
+    thresholds = set()
+    if not isinstance(raw.get('warnings', []), list): raise ConfigError('budget warnings must be a list')
+    for entry in raw.get('warnings', []):
+        _object(entry, {'usd', 'percent'})
+        if len(entry) != 1: raise ConfigError('budget warning requires exactly one threshold')
+        if 'usd' in entry:
+            warning = BudgetWarning(usd=_decimal(entry['usd'], True))
+        else:
+            percent = _decimal(entry['percent'], True)
+            if hard_limit is None or percent >= 100:
+                raise ConfigError('percentage warning requires a hard limit and percent below 100')
+            warning = BudgetWarning(percent=percent)
+        try:
+            threshold = warning.threshold_usd(hard_limit)
+        except (DecimalException, ValueError):
+            raise ConfigError('unrepresentable effective budget warning') from None
+        if threshold in thresholds or hard_limit is not None and threshold >= hard_limit:
+            raise ConfigError('duplicate or nonadvance budget warning')
+        thresholds.add(threshold)
+        warnings.append(warning)
     if account.currency != 'USD': raise ConfigError('guard budgets require USD')
     source = _text(raw['source'])
     if source not in {'workers_usage_estimate', 'account_rated_observed'}:
@@ -117,12 +139,14 @@ def _guard_budget(raw, account, mode):
         as_of = _text(raw['pricing_as_of'])
         try: date.fromisoformat(as_of)
         except ValueError: raise ConfigError('guard price date required') from None
-        if mode == 'enforce' and not approximate: raise ConfigError('approximate budget acceptance required')
+        if mode == 'enforce' and hard_limit is not None and not approximate:
+            raise ConfigError('approximate budget acceptance required')
     else:
         if price_fields & raw.keys(): raise ConfigError('rated budgets cannot include usage pricing')
         rates, provenance, as_of = [Decimal('0')] * 3, '', ''
-    if mode == 'enforce' and not partial: raise ConfigError('partial budget acceptance required')
-    return GuardBudget(_decimal(raw['hard_limit_usd'], True), source, *rates, provenance, as_of, approximate, partial)
+    if mode == 'enforce' and hard_limit is not None and not partial:
+        raise ConfigError('partial budget acceptance required')
+    return GuardBudget(hard_limit, source, *rates, provenance, as_of, approximate, partial, tuple(warnings))
 
 
 def validate_admin_file(path: Path):
@@ -198,13 +222,18 @@ def load_config(path: Path) -> Config:
             raise ConfigError("unsupported permitted action")
         budget = _guard_budget(r['budget'], account_map[key.account_id], mode) if 'budget' in r else None
         if budget is not None and key.product != 'workers': raise ConfigError('unsupported guard budget product')
-        if action == 'delete_worker' and budget is None: raise ConfigError('deletion requires an explicit guard budget')
+        warning_only = budget is not None and budget.hard_limit_usd is None
+        if warning_only and {'permitted_action', 'executor_token_file', 'approved_manifest_file',
+                             'approved_manifest_digest'} & r.keys():
+            raise ConfigError('warning-only budgets cannot contain action or approval fields')
+        if action == 'delete_worker' and (budget is None or budget.hard_limit_usd is None):
+            raise ConfigError('deletion requires an explicit guard budget hard limit')
         digest = r.get("approved_manifest_digest")
         if digest is not None and (not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)):
             raise ConfigError("invalid approval digest")
         executor = _path(r['executor_token_file']) if r.get('executor_token_file') is not None else None
         manifest = _path(r['approved_manifest_file']) if r.get('approved_manifest_file') is not None else None
-        if mode == 'enforce' and (action is None or executor is None or manifest is None or digest is None
+        if mode == 'enforce' and not warning_only and (action is None or executor is None or manifest is None or digest is None
                                   or executor == account_map[key.account_id].read_token_file):
             raise ConfigError('enforcement requires action, separate writer and pinned approval')
         resources.append(ResourceConfig(key, _text(r["name"]), zones, _strings(r.get("hostnames", [])), tuple(thresholds), action,

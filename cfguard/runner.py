@@ -52,6 +52,44 @@ def report_coverage(coverage):
             for key, value in coverage.items()}
 
 
+def policy_report(config):
+    """Inspect configured values without credentials, state or provider access."""
+    from .budget import warning_threshold_usd
+    policies = []
+    for resource in config.resources:
+        budget = resource.budget
+        if budget is None:
+            continue
+        policies.append({'resource_ref': resource_label(resource.key), 'currency': 'USD',
+                         'source': budget.source, 'action': resource.permitted_action,
+                         'hard_limit_usd': str(budget.hard_limit_usd) if budget.hard_limit_usd is not None else None,
+                         'cutoff_enabled': bool(config.mode == 'enforce' and budget.hard_limit_usd is not None
+                                                and resource.permitted_action and resource.executor_token_file
+                                                and resource.approved_manifest_file and resource.approved_manifest_digest),
+                         'warnings': [{'usd': str(w.usd) if w.usd is not None else None,
+                                       'percent': str(w.percent) if w.percent is not None else None,
+                                       'threshold_usd': str(warning_threshold_usd(budget, w))}
+                                      for w in budget.warnings]})
+    return {'mode': config.mode, 'approval_checked': False, 'policies': policies}
+
+
+def cutoff_notification(resource, result, decision=None):
+    """A confirmed action and an attempted/uncertain action are distinct events."""
+    payload = {'reason_code': 'cutoff_result', 'status': result.status,
+               'resource_ref': resource_label(resource.key), 'action': resource.permitted_action,
+               'scope': result.verification.get('scope'), 'action_reason': result.verification.get('reason')}
+    if resource.budget is not None:
+        if decision is not None:
+            from .budget import budget_context
+            payload.update(budget_context(resource, decision))
+        else:
+            payload.update({'value': None, 'hard_limit_usd': str(resource.budget.hard_limit_usd)
+                            if resource.budget.hard_limit_usd is not None else None,
+                            'currency': 'USD', 'period_start': None, 'period_end': None,
+                            'source': resource.budget.source, 'quality': 'unknown'})
+    return payload
+
+
 def _rated_snapshot(store, account, snapshot, now, fetch):
     cache_key = 'rated_cache:' + account.account_id
     if fetch:
@@ -108,7 +146,7 @@ def run_once(config, *, now=None, client_factory=None, probe=False, preview=Fals
     started = time.monotonic()
     report = {'mode': 'probe' if probe else 'enforce-preview' if preview else config.mode,
               'accounts': [], 'scheduler': 'on_time', 'collection': 'unknown',
-              'notification': {'delivered': 0, 'failed': 0, 'pending': 0}, 'actions': []}
+              'notification': {'delivered': 0, 'failed': 0, 'pending': 0}, 'actions': [], 'budget_warnings': []}
     conditions = set()
     with RunLock(config.state_dir), Store(config.state_dir) as store:
         with time_budget(config.run_timeout_seconds):
@@ -152,6 +190,19 @@ def run_once(config, *, now=None, client_factory=None, probe=False, preview=Fals
                                           'unknown', 'collection_failed', metric='collection'),)
                 if not probe and not preview:
                     store.record_decisions(decisions, now)
+                from .budget import budget_warning_events
+                for resource in config.resources:
+                    if resource.key.account_id != account.account_id or resource.budget is None:
+                        continue
+                    guard = next((d for d in decisions if d.key == resource.key and d.metric == 'guard_cost_usd'), None)
+                    if guard is not None:
+                        events = budget_warning_events(resource, guard)
+                        if events:
+                            conditions.add(4)
+                            report['budget_warnings'].extend(payload for _, payload in events)
+                        if not probe and not preview:
+                            for identity, payload in events:
+                                store.enqueue(identity, payload, now, priority=10)
                 statuses = [d.status for d in decisions]
                 if 'unknown' in statuses:
                     conditions.add(3)
@@ -167,6 +218,8 @@ def run_once(config, *, now=None, client_factory=None, probe=False, preview=Fals
                     for resource in config.resources:
                         if resource.key.account_id != account.account_id or resource.budget is None:
                             continue
+                        if resource.budget.hard_limit_usd is None:
+                            continue
                         proposed = any(d.key == resource.key and d.metric == 'guard_cost_usd'
                                        and d.proposed_action for d in decisions)
                         if not proposed and store.intent(resource.key) is None:
@@ -179,9 +232,9 @@ def run_once(config, *, now=None, client_factory=None, probe=False, preview=Fals
                                                   'scope': result.verification.get('scope'),
                                                   'reason_code': result.verification.get('reason')})
                         if not preview:
+                            guard = next((d for d in decisions if d.key == resource.key and d.metric == 'guard_cost_usd'), None)
                             store.enqueue('cutoff:' + (result.attempt_id or resource_label(resource.key)) + ':' + result.status,
-                                          {'reason_code': 'cutoff_result', 'status': result.status,
-                                           'resource_ref': resource_label(resource.key)}, now)
+                                          cutoff_notification(resource, result, guard), now, priority=100)
                         if result.status not in {'worker_deleted', 'endpoints_disabled'} and not preview:
                             conditions.add(5)
                     from .actions import preflight, execute, reconcile
@@ -198,7 +251,7 @@ def run_once(config, *, now=None, client_factory=None, probe=False, preview=Fals
                                                           'resource_ref': resource_label(resource.key)})
                                 store.enqueue('cutoff:' + result.attempt_id + ':' + result.status,
                                               {'reason_code': 'cutoff_result', 'status': result.status,
-                                               'resource_ref': resource_label(resource.key)}, now)
+                                               'resource_ref': resource_label(resource.key)}, now, priority=100)
                                 if result.status != 'verified_public_cutoff':
                                     conditions.add(5)
                     for decision in decisions:
@@ -220,7 +273,7 @@ def run_once(config, *, now=None, client_factory=None, probe=False, preview=Fals
                                 result = execute(plan, action_client, store)
                                 report['actions'].append({'status': result.status, 'attempt_id': result.attempt_id})
                                 store.enqueue('cutoff:' + result.attempt_id + ':' + result.status,
-                                              {'reason_code': 'cutoff_result', 'status': result.status}, now)
+                                              {'reason_code': 'cutoff_result', 'status': result.status}, now, priority=100)
                                 if result.status != 'verified_public_cutoff':
                                     conditions.add(5)
                         except RunDeadline:
@@ -230,7 +283,7 @@ def run_once(config, *, now=None, client_factory=None, probe=False, preview=Fals
                             conditions.add(5)
                             if not preview:
                                 store.enqueue('blocked:' + hashlib.sha256(encode(decision.key).encode()).hexdigest(),
-                                              {'reason_code': 'cutoff_blocked'}, now)
+                                              {'reason_code': 'cutoff_blocked'}, now, priority=100)
             if not probe and not preview:
                 report['notification'] = deliver(store, config.notification, now)
                 if report['notification']['failed'] or report['notification']['pending']:
@@ -252,7 +305,8 @@ def _prepare_cutoff(config, args):
         raise ConfigError('prepare-cutoff needs an exact resource and new external output file')
     key = ResourceKey(args.account_id, 'resource', args.product, args.resource_id)
     resource = next((r for r in config.resources if r.key == key), None)
-    if resource is None or resource.budget is None or resource.permitted_action is None:
+    if (resource is None or resource.budget is None or resource.budget.hard_limit_usd is None
+            or resource.permitted_action is None):
         raise ConfigError('budget cutoff resource is not enrolled')
     output = args.output.absolute()
     if output.is_symlink() or output.resolve().is_relative_to(Path(__file__).resolve().parent.parent):
@@ -274,7 +328,7 @@ def _prepare_cutoff(config, args):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Cloudflare budget guard with explicitly armed Worker cutoffs; not a guaranteed bill cap.')
-    parser.add_argument('command', choices=('validate', 'probe', 'run', 'status', 'rearm', 'enforce-preview', 'prepare-cutoff'))
+    parser.add_argument('command', choices=('validate', 'show-policy', 'probe', 'run', 'status', 'rearm', 'enforce-preview', 'prepare-cutoff'))
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--account-id')
     parser.add_argument('--product', default='workers')
@@ -293,6 +347,8 @@ def main(argv=None):
         if args.command == 'validate':
             report, code = {'valid': True, 'mode': config.mode, 'accounts': len(config.accounts),
                             'resources': len(config.resources)}, 0
+        elif args.command == 'show-policy':
+            report, code = policy_report(config), 0
         elif args.command in ('run', 'probe', 'enforce-preview'):
             code, report = run_once(config, probe=args.command == 'probe', preview=args.command == 'enforce-preview')
         elif args.command == 'prepare-cutoff':
@@ -318,7 +374,11 @@ def main(argv=None):
                               'last_collection_success': store.get_meta('last_collection_success'),
                               'last_collection_healthy': store.get_meta('last_collection_healthy'),
                               'pending_notifications': store.pending_count(),
-                              'tripped': sum(s.status == 'tripped' for s in states)}
+                              'tripped': sum(s.status == 'tripped' for s in states),
+                              'policies': policy_report(config)['policies'],
+                              'resources': [{'resource_ref': resource_label(key), 'status': state.status,
+                                             'execution_status': state.execution_status}
+                                            for key, state in store.prior().items()]}
                     if args.show_identities:
                         keys = set(store.prior()) | {r.key for r in config.resources}
                         report['private_identity_mapping'] = [
@@ -333,7 +393,7 @@ def main(argv=None):
         report, code = {'error': 'run_deadline_exceeded', 'collection': 'unknown'}, 3
     except (sqlite3.Error, OSError, ValueError, TypeError, KeyError):
         report, code = {'error': 'runtime_failure'}, 3
-    print(json.dumps(report, sort_keys=True, allow_nan=False))
+    print(json.dumps(report, sort_keys=True, allow_nan=False, indent=2 if args.command == 'show-policy' else None))
     return code
 
 

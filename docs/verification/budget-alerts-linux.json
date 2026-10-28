@@ -1,0 +1,65 @@
+{
+  "date": "2026-10-28",
+  "branch": "codex/automatic-cutoff-2026-10-27",
+  "platform": {
+    "distribution": "Ubuntu 24.04 WSL2 disposable",
+    "python": "3.12.3",
+    "systemd": "255.4-1ubuntu8"
+  },
+  "source_files": 38,
+  "source_normalization": "CRLF to LF",
+  "review_manifest_sha256": "d60890b74781ca03e758448c0823130f1995986ca713efa258937b9a6cb901c7",
+  "linux_manifest_sha256": "5e460c37f1ed11372c69c9c81fc9c97e8b6334fe4ef81e0fa920addb0e820513",
+  "unit_tests": {
+    "count": 200,
+    "skips": 0,
+    "seconds": "14.306",
+    "exit": 0,
+    "unprivileged": true,
+    "external_network_isolated": true
+  },
+  "lifecycle": {
+    "install_twice": "passed",
+    "unit_verify": "passed without diagnostics",
+    "overlap": {
+      "exit": 3,
+      "collector_calls": 1
+    },
+    "running_memory": [
+      "VmHWM:\t   27268 kB",
+      "VmRSS:\t   27268 kB"
+    ],
+    "scheduled_runs": 2,
+    "resource_accounting": [
+      "Result=exit-code",
+      "MemoryPeak=[not set]",
+      "CPUUsageNSec=236795000"
+    ],
+    "restart_latch": "persisted across scheduled processes",
+    "secret_restriction_and_logs": "nobody denied; fake token absent from journal",
+    "uninstall": "units/code removed; exact DB, secrets, unrelated backup preserved"
+  },
+  "installed_policy_smoke": {
+    "installed_show_policy_as_service_user": true,
+    "succeeds_with_unreadable_read_token": true,
+    "warning_thresholds": [
+      "0.50",
+      "0.75"
+    ],
+    "hard_limit": null,
+    "cutoff_enabled": false,
+    "private_identities_absent": true,
+    "show_policy_keeps_db_bytes_unchanged": true,
+    "collector_count": 2,
+    "installed_lifecycle_schema": "5",
+    "outbox_priority_column": true,
+    "units_loaded_inactive": true,
+    "uninstall_preserves_exact_db_secret_backup": true
+  },
+  "posttest_source_matches_review_manifest": true,
+  "fixture_removed": true,
+  "final_wsl_inventory_empty": true,
+  "provider_live_calls": false,
+  "real_credentials": false,
+  "source_edits": false
+}

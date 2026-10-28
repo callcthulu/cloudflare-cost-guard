@@ -37,7 +37,18 @@
         "pricing_source": "SYNTHETIC EXAMPLE ONLY; replace with verified pricing and your CPU planning reserve",
         "pricing_as_of": "2026-10-27",
         "accept_approximate": false,
-        "accept_partial": false
+        "accept_partial": false,
+        "warnings": [
+          {
+            "usd": "5.00"
+          },
+          {
+            "percent": "80"
+          },
+          {
+            "usd": "9.00"
+          }
+        ]
       }
     }
   ]

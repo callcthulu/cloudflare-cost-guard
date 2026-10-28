@@ -25,6 +25,11 @@ mutation, publication or messaging permission. Honor the operator's current scop
   `enforce-preview` never mutate provider state. No executor token in observe.
   Automatic budget cutoff requires explicit arming of an existing installation;
   no live provider canary is claimed by source tests.
+- Budgets allow zero or more USD/percentage warnings and zero or one hard cutoff.
+  A missing/null hard limit never authorizes a write. Warnings are notification-only,
+  use the same qualified signal and deduplicate by resource/source/period/threshold.
+  Warning edits preserve cutoff approval; cutoff policy edits do not. Prioritize
+  due cutoff outcomes over warnings and routine events without bypassing backoff.
 - Unknown is not zero or healthy. Keep estimates, rated charges and subscription
   commitments separate. Use Decimal strings, UTC provider windows, explicit scope,
   known units and source quality. Account totals and breakdowns are not additive.
