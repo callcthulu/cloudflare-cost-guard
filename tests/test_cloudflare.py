@@ -1,6 +1,7 @@
 """Offline fixtures follow the linked Cloudflare contracts, never live credentials."""
 import json
 import hashlib
+import http.client
 import os
 import ssl
 import tempfile
@@ -38,6 +39,31 @@ class FakeHTTP:
 
 
 class CollectorTests(unittest.TestCase):
+    def malformed_http(self, request):
+        raise http.client.BadStatusLine('SYNTHETIC_PRIVATE_RESPONSE')
+
+    def test_malformed_http_reads_retry_bounded_and_hide_response_details(self):
+        client=self.client(self.malformed_http)
+        with self.assertRaises(CloudflareError) as caught:
+            client.request('GET','/accounts/'+self.account.account_id+'/subscriptions')
+        self.assertEqual(str(caught.exception),'transport_unavailable')
+        self.assertTrue(caught.exception.__suppress_context__)
+        self.assertEqual(len(self.http.calls),2)
+        self.assertNotIn('SYNTHETIC_PRIVATE_RESPONSE',str(caught.exception))
+
+    def test_malformed_http_mutation_is_one_attempt_and_sanitized(self):
+        client=self.client(self.malformed_http)
+        with self.assertRaises(CloudflareError) as caught:
+            client.request('DELETE','/accounts/'+self.account.account_id+'/workers/scripts/sample?force=false')
+        self.assertEqual(str(caught.exception),'transport_unavailable')
+        self.assertEqual(len(self.http.calls),1)
+
+    def test_malformed_public_probe_stays_unknown_without_credentials(self):
+        client=self.client(self.malformed_http)
+        self.assertEqual(client.probe_endpoint('https://sample.workers.dev/'),'unknown')
+        self.assertEqual(len(self.http.calls),1)
+        self.assertIsNone(self.http.calls[0].get_header('Authorization'))
+
     def test_usage_ledger_buckets_coalesce_statuses_without_overlapping_aggregates(self):
         def handler(req):
             if req.full_url.endswith('/graphql'):

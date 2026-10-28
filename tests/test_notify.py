@@ -5,12 +5,38 @@ from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from threading import Thread
 import json
+import http.client
 import urllib.request
+from datetime import timedelta
+from unittest.mock import patch
 from cfguard.notify import deliver
 from cfguard.state import Store
 
 
 class NotifyTests(unittest.TestCase):
+    def test_malformed_legacy_http_is_sanitized_and_retried_with_backoff(self):
+        now=datetime.now(timezone.utc)
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            destination=root/'notification.url'
+            destination.write_text('https://alerts.example.invalid/synthetic')
+            destination.chmod(0o600)
+            with Store(root/'state') as store:
+                store.enqueue('critical',{'reason_code':'cutoff_result'},now,priority=100)
+                configuration={'url_file':destination,'max_attempts':1}
+                with patch('cfguard.notify.urllib.request.build_opener') as opener:
+                    opener.return_value.open.side_effect=http.client.BadStatusLine('SYNTHETIC_PRIVATE_RESPONSE')
+                    result=deliver(store,configuration,now)
+                    self.assertEqual(result,{'delivered':0,'failed':1,'pending':1})
+                    self.assertNotIn('SYNTHETIC_PRIVATE_RESPONSE',str(result))
+                    self.assertEqual(deliver(store,configuration,now),{'delivered':0,'failed':0,'pending':1})
+                    self.assertEqual(opener.return_value.open.call_count,1)
+                event=store.db.execute('SELECT attempts,next_at FROM outbox WHERE id=?',('critical',)).fetchone()
+                self.assertEqual(event['attempts'],1)
+                self.assertGreater(datetime.fromisoformat(event['next_at']),now)
+                retried=deliver(store,configuration,now+timedelta(seconds=120),transport=lambda url,body:204)
+                self.assertEqual(retried,{'delivered':1,'failed':0,'pending':0})
+
     def test_local_receiver_records_incident_and_acknowledges(self):
         received = []
         class Receiver(BaseHTTPRequestHandler):
