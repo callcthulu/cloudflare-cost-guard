@@ -7,6 +7,13 @@ production-readiness certification is claimed.
 
 ### Added
 
+- Native email (TLS SMTP), Telegram, Slack and Discord destinations alongside the
+  backward-compatible generic JSON receiver; configurable combinations, incident
+  recipient snapshots and independent retry/cancellation state per destination.
+- Configuration-only `test-notification` preview and explicit `--send` for one
+  selected synthetic message without Cloudflare calls or backlog delivery. See
+  [notification setup](docs/notifications.md). Live receipt remains an operator gate.
+
 - Optional multiple USD/percentage resource-budget warnings, warning-only budgets
   without a hard limit, and configuration-only `show-policy` inspection. Warning
   edits preserve cutoff approval; equivalent effective warning thresholds share

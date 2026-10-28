@@ -53,7 +53,7 @@ local labels; neither selects a provider resource.
 | `state_dir` | Absolute path, default `/var/lib/cloudflare-cost-guard`; installer requires this exact path. |
 | `run_timeout_seconds` | Integer 1–299, default 240. systemd still imposes 240 seconds; keep this at or below 240. |
 | `heartbeat_max_age_seconds` | Integer 301–86400, default 660. Detects gaps when a later run occurs; cannot detect a stopped host alone. |
-| `notification` | Omitted/null initially. Otherwise external HTTPS `url_file` and optional `max_attempts` 1–10, default 3. |
+| `notification` | Omitted/null initially. Otherwise 1–16 explicit `targets` or the legacy external HTTPS `url_file`; optional `max_attempts` 1–10 globally per run, default 3. |
 
 Each account requires `key`, `account_id`, `read_token_file`, `billing_day`,
 `budget` and `currency`. Optional account fields:
@@ -134,7 +134,15 @@ The installer requires root:cloudflare-cost-guard mode `0640` secrets and protec
 ancestors; state is service-owned mode `0700`. Windows checks do not validate
 POSIX ownership, so use Linux for deployment security validation.
 
-For an owner-approved generic HTTPS JSON receiver, add this top-level member:
+Use `notification.targets` for any combination of email, Telegram, Slack, Discord
+and generic HTTPS JSON destinations. Each target has a unique stable `id` matching
+`[a-z][a-z0-9_-]{0,63}` and a `type`. Keep actual URLs, tokens, chat IDs and SMTP
+settings in external protected files; config contains metadata and absolute paths.
+See [notification setup](notifications.md) for the four-channel fragment, secret
+file formats, preview/send commands and safe recipient changes. A
+[complete synthetic observe config](../config.notifications.example.json) is provided.
+
+Existing generic receivers keep this backward-compatible top-level member:
 
 ```json
 {
@@ -145,12 +153,15 @@ For an owner-approved generic HTTPS JSON receiver, add this top-level member:
 }
 ```
 
-Merge this member into the full config; this object is not a standalone config. The URL belongs in the protected
-file, never JSON/Git. `max_attempts` limits due **events per run**; failed events
-retry on later runs. This payload is not a native Slack/Discord message format.
-See [delivery setup](runbook.md#notifications-and-scheduling). Omitting notification
+Merge this fragment into a complete config. Do not combine `url_file` with
+`targets`. A generic receiver accepts the original incident JSON, rather than a
+native channel message. `max_attempts` bounds due **destination deliveries per run**,
+not lifetime retries; the bound is global across targets. Retries use bounded
+backoff. Missing files do not become a successful delivery. Omitting notification
 is safe for a first probe; a later run queues incidents and exits 5 while alerts
-remain pending.
+remain pending. Switching a legacy configuration to targets explicitly cancels
+unbound legacy pending deliveries while retaining evidence; it does not send that
+old backlog to the newly selected recipients.
 
 Optional resource enforcement fields are `permitted_action`,
 `executor_token_file`, `approved_manifest_file` and `approved_manifest_digest`

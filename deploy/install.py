@@ -214,7 +214,7 @@ def install(config_path, *, allow_enforce=False):
     for suffix in ('service', 'timer'):
         safe_path(source / 'deploy' / f'{NAME}.{suffix}')
     sys.path.insert(0, str(source))
-    from cfguard.config import load_config
+    from cfguard.config import load_config, notification_secret_files
     config = load_config(config_path)
     if allow_enforce:
         required = {path.relative_to('/').as_posix() for path in (
@@ -234,8 +234,7 @@ def install(config_path, *, allow_enforce=False):
     if config.state_dir != STATE:
         raise InstallError('state_dir must match protected service state directory')
     secrets = [account.read_token_file for account in config.accounts]
-    if config.notification:
-        secrets.append(config.notification['url_file'])
+    secrets.extend(notification_secret_files(config.notification))
     if allow_enforce:
         for resource in cutoff_resources:
             secrets.extend((resource.executor_token_file, resource.approved_manifest_file))

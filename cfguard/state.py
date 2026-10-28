@@ -3,6 +3,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import sqlite3
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timedelta, timezone
@@ -82,9 +83,10 @@ class RunLock:
 
 
 class Store:
-    SCHEMA_VERSION = '5'
+    SCHEMA_VERSION = '6'
 
     def __init__(self, path):
+        self._notification_targets = None
         path = private_directory(path) / 'guard.sqlite3'
         if path.is_symlink():
             raise ValueError('unsafe database path')
@@ -93,7 +95,7 @@ class Store:
         self.db = sqlite3.connect(path, timeout=2, isolation_level=None)
         self.db.row_factory = sqlite3.Row
         meta_exists = self.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='meta'").fetchone()
-        if meta_exists and self.get_meta('schema_version') not in (None, '1', '2', '3', '4', self.SCHEMA_VERSION):
+        if meta_exists and self.get_meta('schema_version') not in (None, '1', '2', '3', '4', '5', self.SCHEMA_VERSION):
             self.db.close()
             raise ValueError('unsupported database schema')
         self.db.execute('PRAGMA journal_mode=DELETE')
@@ -107,7 +109,14 @@ class Store:
                 resource_key TEXT, generation INTEGER NOT NULL DEFAULT 1, dimension TEXT);
             CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, payload TEXT NOT NULL,
                 attempts INTEGER NOT NULL DEFAULT 0, next_at TEXT NOT NULL, delivered INTEGER NOT NULL DEFAULT 0,
-                priority INTEGER NOT NULL DEFAULT 0);
+                priority INTEGER NOT NULL DEFAULT 0, routing TEXT NOT NULL DEFAULT 'legacy');
+            CREATE TABLE IF NOT EXISTS notification_deliveries (
+                event_id TEXT NOT NULL, target_id TEXT NOT NULL, config_digest TEXT NOT NULL,
+                destination_digest TEXT, status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK(status IN ('pending','delivered','cancelled')),
+                attempts INTEGER NOT NULL DEFAULT 0, next_at TEXT NOT NULL,
+                last_attempt TEXT, cancelled_at TEXT, reason TEXT,
+                PRIMARY KEY(event_id,target_id));
             CREATE TABLE IF NOT EXISTS intents (key TEXT PRIMARY KEY, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS budget_ledger (kind TEXT NOT NULL, key TEXT NOT NULL,
                 period TEXT NOT NULL, identity TEXT NOT NULL, payload TEXT NOT NULL,
@@ -116,7 +125,7 @@ class Store:
                 payload TEXT NOT NULL, archived_at TEXT NOT NULL);
         ''')
         version = self.get_meta('schema_version')
-        if version not in (None, '1', '2', '3', '4', self.SCHEMA_VERSION):
+        if version not in (None, '1', '2', '3', '4', '5', self.SCHEMA_VERSION):
             self.db.close()
             raise ValueError('unsupported database schema')
         with self.transaction():
@@ -130,7 +139,9 @@ class Store:
             outbox_columns = {row['name'] for row in self.db.execute('PRAGMA table_info(outbox)')}
             if 'priority' not in outbox_columns:
                 self.db.execute('ALTER TABLE outbox ADD COLUMN priority INTEGER NOT NULL DEFAULT 0')
-            if version != self.SCHEMA_VERSION:
+            if 'routing' not in outbox_columns:
+                self.db.execute("ALTER TABLE outbox ADD COLUMN routing TEXT NOT NULL DEFAULT 'legacy'")
+            if version not in ('5', self.SCHEMA_VERSION):
                 self.db.execute("UPDATE outbox SET priority=100 WHERE id GLOB 'cutoff:*' OR id GLOB 'blocked:*'")
             self.set_meta('schema_version', self.SCHEMA_VERSION)
 
@@ -164,8 +175,101 @@ class Store:
     def enqueue(self, identity, payload, now, *, priority=0):
         if type(priority) is not int or not 0 <= priority <= 100:
             raise ValueError('notification priority must be an integer from 0 to 100')
-        self.db.execute('INSERT OR IGNORE INTO outbox(id,payload,next_at,priority) VALUES (?,?,?,?)',
-                        (identity, encode(dict(payload, incident_id=identity)), now.isoformat(), priority))
+        # record_decisions already owns a transaction; standalone enqueues need one too.
+        with contextlib.nullcontext() if self.db.in_transaction else self.transaction():
+            inserted = self.db.execute('''INSERT OR IGNORE INTO outbox(id,payload,next_at,priority,routing)
+                VALUES (?,?,?,?,?)''', (identity, encode(dict(payload, incident_id=identity)),
+                                       now.isoformat(), priority,
+                                       'multi' if self._notification_targets is not None else 'legacy')).rowcount
+            if inserted and self._notification_targets is not None:
+                self.db.executemany('''INSERT INTO notification_deliveries
+                    (event_id,target_id,config_digest,destination_digest,next_at) VALUES (?,?,?,?,?)''',
+                    [(identity, target['id'], target['config_digest'], target['destination_digest'], now.isoformat())
+                     for target in self._notification_targets])
+
+    def configure_notification_targets(self, routes, now):
+        """Snapshot hashes only; cancel changed routes without replaying historical alerts."""
+        if not isinstance(routes, (list, tuple)) or len(routes) > 16:
+            raise ValueError('invalid notification target routes')
+        targets = {}
+        for route in routes:
+            if not isinstance(route, dict):
+                raise ValueError('invalid notification target route')
+            identity, digest, destination = route.get('id'), route.get('config_digest'), route.get('destination_digest')
+            if (not isinstance(identity, str) or not re.fullmatch(r'[a-z][a-z0-9_-]{0,63}', identity) or
+                    identity in targets or not isinstance(digest, str) or
+                    not re.fullmatch(r'[0-9a-f]{64}', digest) or
+                    destination is not None and (not isinstance(destination, str) or
+                                                  not re.fullmatch(r'[0-9a-f]{64}', destination))):
+                raise ValueError('invalid notification target route')
+            targets[identity] = {'id': identity, 'config_digest': digest, 'destination_digest': destination}
+        with self.transaction():
+            cancelled = self.db.execute("UPDATE outbox SET routing='legacy_cancelled' WHERE routing='legacy' AND delivered=0").rowcount
+            # Work per bounded route set, never materialize the pending backlog in Python.
+            removed = 'target_id NOT IN (' + ','.join('?' for _ in targets) + ')' if targets else '1'
+            cancelled += self.db.execute(f'''UPDATE notification_deliveries
+                SET status='cancelled',cancelled_at=?,reason='target_removed'
+                WHERE status='pending' AND {removed}''', (now.isoformat(), *targets)).rowcount
+            for target in targets.values():
+                cancelled += self.db.execute('''UPDATE notification_deliveries
+                    SET status='cancelled',cancelled_at=?,reason='configuration_changed'
+                    WHERE status='pending' AND target_id=? AND config_digest!=?''',
+                    (now.isoformat(), target['id'], target['config_digest'])).rowcount
+                if target['destination_digest'] is not None:
+                    cancelled += self.db.execute('''UPDATE notification_deliveries
+                        SET status='cancelled',cancelled_at=?,reason='destination_changed'
+                        WHERE status='pending' AND target_id=? AND destination_digest IS NOT NULL
+                        AND destination_digest!=?''',
+                        (now.isoformat(), target['id'], target['destination_digest'])).rowcount
+                    self.db.execute('''UPDATE notification_deliveries SET destination_digest=?
+                        WHERE status='pending' AND target_id=? AND destination_digest IS NULL''',
+                        (target['destination_digest'], target['id']))
+        self._notification_targets = tuple(targets.values())
+        return cancelled
+
+    def disable_notification_targets(self, now):
+        with self.transaction():
+            cancelled = self.db.execute('''UPDATE notification_deliveries
+                SET status='cancelled',cancelled_at=?,reason='targets_disabled' WHERE status='pending' ''',
+                                       (now.isoformat(),)).rowcount
+        self._notification_targets = None
+        return cancelled
+
+    def pending_deliveries(self, now, limit=5):
+        rows = self.db.execute('''SELECT delivery.*,outbox.id,outbox.payload,outbox.priority
+            FROM notification_deliveries AS delivery JOIN outbox ON outbox.id=delivery.event_id
+            WHERE delivery.status='pending' AND delivery.next_at<=? AND outbox.routing='multi'
+            ORDER BY outbox.priority DESC,delivery.next_at,delivery.event_id,delivery.target_id LIMIT ?''',
+                               (now.isoformat(), min(max(limit, 0), 10))).fetchall()
+        return [dict(row) | {'payload': json.loads(row['payload'])} for row in rows]
+
+    def notification_delivery_result(self, event_id, target_id, success, now):
+        with self.transaction():
+            row = self.db.execute('''SELECT status,attempts FROM notification_deliveries
+                WHERE event_id=? AND target_id=?''', (event_id, target_id)).fetchone()
+            if row is None:
+                raise ValueError('unknown notification delivery')
+            if row['status'] != 'pending':
+                return
+            attempts = row['attempts'] + 1
+            next_at = now + timedelta(seconds=min(3600, 60 * 2 ** min(attempts, 6)))
+            self.db.execute('''UPDATE notification_deliveries SET status=?,attempts=?,next_at=?,last_attempt=?
+                WHERE event_id=? AND target_id=? AND status='pending' ''',
+                            ('delivered' if success else 'pending', attempts, next_at.isoformat(),
+                             now.isoformat(), event_id, target_id))
+            self.db.execute('''UPDATE outbox SET delivered=1 WHERE id=? AND routing='multi'
+                AND NOT EXISTS (SELECT 1 FROM notification_deliveries WHERE event_id=? AND status!='delivered')''',
+                            (event_id, event_id))
+
+    def delivery_summary(self):
+        counts = {target['id']: {'pending': 0, 'delivered': 0, 'cancelled': 0}
+                  for target in self._notification_targets or ()}
+        for row in self.db.execute('''SELECT target_id,status,COUNT(*) AS count FROM notification_deliveries
+            GROUP BY target_id,status'''):
+            counts.setdefault(row['target_id'], {'pending': 0, 'delivered': 0, 'cancelled': 0})[row['status']] = row['count']
+        return {'targets': [{'target_ref': hashlib.sha256(identity.encode()).hexdigest()[:16], **counts[identity]}
+                            for identity in sorted(counts)],
+                'legacy_cancelled': self.db.execute("SELECT COUNT(*) FROM outbox WHERE routing='legacy_cancelled'").fetchone()[0]}
 
     def record_decisions(self, decisions, now):
         with self.transaction():
@@ -223,12 +327,13 @@ class Store:
                             (identity, value, value if valid else None))
 
     def pending_notifications(self, now, limit=5):
-        rows = self.db.execute('SELECT * FROM outbox WHERE delivered=0 AND next_at<=? ORDER BY priority DESC,next_at,id LIMIT ?',
+        rows = self.db.execute("SELECT * FROM outbox WHERE routing='legacy' AND delivered=0 AND next_at<=? ORDER BY priority DESC,next_at,id LIMIT ?",
                                (now.isoformat(), min(max(limit, 0), 10))).fetchall()
         return [dict(row) | {'payload': json.loads(row['payload'])} for row in rows]
 
     def pending_count(self):
-        return self.db.execute('SELECT COUNT(*) FROM outbox WHERE delivered=0').fetchone()[0]
+        return self.db.execute("""SELECT (SELECT COUNT(*) FROM outbox WHERE routing='legacy' AND delivered=0)
+            + (SELECT COUNT(*) FROM notification_deliveries WHERE status='pending')""").fetchone()[0]
 
     def notification_result(self, identity, success, now):
         with self.transaction():
@@ -331,7 +436,7 @@ class Store:
             if backup.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
                 raise ValueError('corrupt backup')
             version = backup.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-            if version is None or version[0] not in ('1', '2', '3', '4', cls.SCHEMA_VERSION):
+            if version is None or version[0] not in ('1', '2', '3', '4', '5', cls.SCHEMA_VERSION):
                 raise ValueError('unsupported backup schema')
             fd = os.open(directory / 'guard.sqlite3', os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
             os.close(fd)

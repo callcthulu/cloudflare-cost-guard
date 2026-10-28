@@ -27,6 +27,51 @@ class CutoffRunnerTests(unittest.TestCase):
                        warnings=(models.BudgetWarning(usd=D('.00005')),
                                  models.BudgetWarning(usd=D('.0001'))))
 
+    def test_native_targets_retry_independently_after_cutoff_without_resending_success(self):
+        config=self.config()
+        slack=self.root/'slack.url';slack.write_text('https://hooks.slack.com/services/TTEST/BTEST/synthetic')
+        discord=self.root/'discord.url';discord.write_text('https://discord.com/api/webhooks/123456/synthetic_TOKEN')
+        for path in (slack,discord):path.chmod(0o600)
+        config=replace(config,notification={'max_attempts':2,'targets':[
+            {'id':'a-slack','type':'slack','url_file':slack},
+            {'id':'z-discord','type':'discord','url_file':discord}]})
+        posts=[]
+        def transport(url,body):
+            self.assertTrue(self.deleted,'notification ran before the approved cutoff')
+            payload=json.loads(body)
+            text=payload.get('text',payload.get('content',''))
+            cutoff='reason_code: cutoff_result' in text
+            posts.append(('slack' if 'slack.com' in url else 'discord',cutoff))
+            if 'slack.com' in url:return 200,b'ok'
+            failures=sum(channel=='discord' and is_cutoff for channel,is_cutoff in posts)
+            return (503,b'{}') if cutoff and failures==1 else (200,b'{"id":"987654"}')
+        with patch('cfguard.notify._http_post',side_effect=transport):
+            code,report=self.run_guard(config)
+            self.assertEqual(code,5)
+            self.assertEqual((report['notification']['delivered'],report['notification']['failed']),(1,1))
+            self.run_guard(config)
+            self.assertEqual(sum(channel=='slack' and cutoff for channel,cutoff in posts),1)
+            self.assertEqual(sum(channel=='discord' and cutoff for channel,cutoff in posts),1)
+            with patch('cfguard.cutoff.validate_admin_file'):
+                run_once(config,now=NOW+timedelta(minutes=5),client_factory=self.factory)
+        self.assertEqual(sum(channel=='slack' and cutoff for channel,cutoff in posts),1)
+        self.assertEqual(sum(channel=='discord' and cutoff for channel,cutoff in posts),2)
+        self.assertEqual(sum(method=='DELETE' for method,*_ in self.calls),1)
+        self.assertNotIn('hooks.slack',json.dumps(report))
+        self.assertNotIn('demo-worker',json.dumps(report))
+
+    def test_native_probe_and_preview_never_read_notification_secrets_or_send(self):
+        config=self.config()
+        config=replace(config,notification={'targets':[{'id':'ops','type':'slack','url_file':self.root/'missing.url'}]})
+        with patch('cfguard.notify._protected_text',side_effect=AssertionError('read notification secret')), \
+                patch('cfguard.notify._http_post',side_effect=AssertionError('made notification request')):
+            self.run_guard(config,probe=True)
+            self.run_guard(config,preview=True)
+        self.assertFalse(self.deleted)
+        with Store(config.state_dir) as store:
+            self.assertEqual(store.pending_count(),0)
+            self.assertIsNone(store.intent(self.resource.key))
+
     def budget_events(self, config, reason):
         with Store(config.state_dir) as store:
             return [json.loads(row['payload']) for row in store.db.execute('SELECT payload FROM outbox')

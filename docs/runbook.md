@@ -20,66 +20,50 @@ your login user to the service group or weaken directory permissions. Redefine
 the helper when opening a new shell.
 ## Notifications and scheduling
 
-Initial probe needs no notification receiver. Before scheduled operation, choose
-an existing **owner-approved generic HTTPS JSON receiver**. It must accept the
-application's incident payload, deduplicate `incident_id`, and return HTTP 2xx
-only after durable acceptance. Delivery is at least once after an uncertain
-network timeout; HTTP acceptance is not human receipt. There is no built-in
-email, Slack or Discord message adapter or notification testing CLI. An external
-receiver must translate the generic JSON if those destinations are desired.
+Initial probe needs no notification destination. Before scheduling, configure
+owner-approved [native destinations](notifications.md): email, Telegram, Slack,
+Discord or generic JSON receivers, in any combination. Each destination has its
+own delivery status and retries. API/SMTP acceptance is separate from the owner
+confirming actual receipt; timeouts can produce duplicates.
 
-A representative incident body is:
+Use the [complete synthetic config](../config.notifications.example.json) as a
+schema example and keep credentials in protected external files. Edit the protected
+source JSON, never the hash-owned installed config. Follow
+[configuration updates](#configuration-updates-upgrades-and-token-rotation) below:
+stop scheduling, inspect pending deliveries, snapshot state, review `validate` and
+`show-policy`, then use the managed installer. Explicitly restart after validation.
+The [notification guide](notifications.md#changing-destinations-and-rotating-secrets)
+explains recipient binding and cancellation of old pending deliveries.
 
-```json
-{
-  "incident_id": "synthetic-incident:1",
-  "status": "unknown",
-  "reason_code": "rated_unknown",
-  "scope": "account",
-  "resource_ref": "synthetic-reference",
-  "metric": "rated_cost"
-}
-```
-
-Budget events include value, hard limit (nullable), threshold, guard period, source
-quality and sanitized `resource_ref` context. Critical confirmed/blocked/uncertain
-cutoff events have priority 100; warnings have 10 and routine events 0. Due delivery
-uses that priority so routine backlog does not take the slots ahead of a cutoff.
-The default per-run limit is 3 events (configurable up to 10); it is shared by all
-due events, not a separate allowance per resource or warning.
-
-Scheduler/action event fields differ. Do not require every event to have every
-field above. Alert payloads omit raw resource inventory. Treat receiver URLs as
-secrets: HTTPS only, no URL user/password, fragment or redirect. Store the URL
-in a root:cloudflare-cost-guard mode `0640` external file with protected parents,
-using the same secure-file approach as read tokens. For an already securely
-provisioned root-only input file:
+Preview one target before sending anything:
 
 ```sh
-sudo install -o root -g cloudflare-cost-guard -m 0640 \
-  /root/secure-import/notification.url \
-  /etc/cloudflare-cost-guard/secrets/notification.url
+cfguard test-notification --config /etc/cloudflare-cost-guard/config.json --target ops-slack
 ```
 
-Add `notification` to `/root/cfguard-config.json` using the
-[configuration fragment](configuration.md#files-notifications-and-enforcement-fields),
-then reinstall through the update procedure below. Never edit installed
-`/etc/cloudflare-cost-guard/config.json` directly: it is hash tracked.
-`max_attempts` is the maximum due events attempted **per run**, not a lifetime
-retry count. Failed events retry on future runs with bounded backoff. An unset
-receiver leaves incidents pending; the run exits 5 while any remain pending.
+With explicit authorization for the selected destination, append `--send` to
+send one synthetic message only. Repeat separately for each configured target and
+have its owner confirm receipt. This command makes no Cloudflare calls, opens no
+incident queue and never flushes backlog. Use the root-trusted source wrapper in
+the notification guide to inspect root-only source configuration before installation.
 
-Run one observe cycle after explicit receiver/notification approval and confirm
-that the intended recipient actually received its incident. Previously queued
-unknown/warning events can provide this verification; do not provoke a paid
-charge or alter a live Worker as an alert test. Inspect pending count, the run's
-`notification` object and collection health separately.
+Budget messages carry value, nullable hard limit, threshold, UTC guard period,
+source quality and sanitized `resource_ref` context. Confirmed/blocked/uncertain
+cutoff outcomes take priority over warnings and routine events among due deliveries;
+backoff is still honored. `max_attempts` defaults to 3 (maximum 10) destination
+deliveries across the entire run, not a separate quota for each target or event.
+A failed destination does not erase another destination's success. Missing
+credentials leave the affected delivery pending for later retry.
+
+After approved installation, inspect collection and delivery separately:
 
 ```sh
 cfguard run --config /etc/cloudflare-cost-guard/config.json
 printf 'run exit: %s\n' "$?"
 cfguard status --config /etc/cloudflare-cost-guard/config.json
 ```
+
+An armed enforce run can execute a real cutoff; never use it as a notification test.
 
 Have the owner approve an independently hosted check in an existing monitoring
 system. It should detect absent runs, old `last_finished`, old

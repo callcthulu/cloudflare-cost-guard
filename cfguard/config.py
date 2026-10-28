@@ -99,6 +99,46 @@ def _pairs(pairs):
     return result
 
 
+_NOTIFICATION_FILES = {'webhook': ('url_file',), 'slack': ('url_file',),
+                       'discord': ('url_file',), 'telegram': ('token_file', 'chat_id_file'),
+                       'email': ('settings_file',)}
+
+
+def notification_secret_files(configuration):
+    """Enumerate protected file references without reading their contents."""
+    if not configuration:
+        return ()
+    if 'targets' not in configuration:
+        return (configuration['url_file'],)
+    return tuple(dict.fromkeys(target[field] for target in configuration['targets']
+                               for field in _NOTIFICATION_FILES[target['type']]))
+
+
+def _notification(raw):
+    _object(raw, {'url_file', 'targets', 'max_attempts'})
+    result = {'max_attempts': _integer(raw.get('max_attempts', 3), 1, 10)}
+    if 'targets' not in raw:
+        if 'url_file' not in raw:
+            raise ConfigError('notification requires a destination')
+        return dict(result, url_file=_path(raw['url_file']))
+    if 'url_file' in raw or not isinstance(raw['targets'], list) or not 1 <= len(raw['targets']) <= 16:
+        raise ConfigError('notification requires one to sixteen explicit targets')
+    targets, identifiers = [], set()
+    for item in raw['targets']:
+        _object(item, {'id', 'type', 'url_file', 'token_file', 'chat_id_file', 'settings_file'}, {'id', 'type'})
+        kind = item['type']
+        if not isinstance(kind, str) or kind not in _NOTIFICATION_FILES:
+            raise ConfigError('unsupported notification type')
+        fields = _NOTIFICATION_FILES[kind]
+        _object(item, {'id', 'type', *fields}, {'id', 'type', *fields})
+        identity = _text(item['id'])
+        if not re.fullmatch(r'[a-z][a-z0-9_-]{0,63}', identity) or identity in identifiers:
+            raise ConfigError('invalid or duplicate notification target identity')
+        identifiers.add(identity)
+        targets.append({'id': identity, 'type': kind, **{field: _path(item[field]) for field in fields}})
+    return dict(result, targets=tuple(targets))
+
+
 def _guard_budget(raw, account, mode):
     fields = {'hard_limit_usd', 'source', 'request_usd_per_million', 'cpu_usd_per_million_ms',
               'cpu_ms_per_request', 'pricing_source', 'pricing_as_of', 'accept_approximate', 'accept_partial', 'warnings'}
@@ -241,7 +281,6 @@ def load_config(path: Path) -> Config:
     if len({r.key for r in resources}) != len(resources): raise ConfigError("duplicate resource identity")
     notification = raw.get("notification")
     if notification is not None:
-        _object(notification, {"url_file", "max_attempts"}, {"url_file"})
-        notification = {"url_file": _path(notification["url_file"]), "max_attempts": _integer(notification.get("max_attempts", 3), 1, 10)}
+        notification = _notification(notification)
     return Config(mode, tuple(accounts), tuple(resources), _path(raw.get("state_dir", "/var/lib/cloudflare-cost-guard")), notification,
                   _integer(raw.get("run_timeout_seconds", 240), 1, 299), _integer(raw.get("heartbeat_max_age_seconds", 660), 301, 86400))

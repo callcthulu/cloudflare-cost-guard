@@ -1,0 +1,99 @@
+{
+  "date": "2026-10-28",
+  "completed_at": "2026-10-28T12:54:00.616700+00:00",
+  "branch": "codex/automatic-cutoff-2026-10-27",
+  "platform": {
+    "distribution": "Ubuntu 24.04 WSL2 disposable",
+    "python": "3.12.3",
+    "systemd": "255.4-1ubuntu8"
+  },
+  "source_files": 41,
+  "source_normalization": "CRLF to LF",
+  "review_manifest_sha256": "e0cae5ea324c0972c53b3d55ba983246dcb9bee2faa6c8218f85418fcc61946f",
+  "linux_manifest_sha256": "028daeed59551cde962f14c14d86c59880f688eec718b1628c08a7870bd38012",
+  "unit_tests": {
+    "count": 242,
+    "skips": 0,
+    "seconds": "16.209",
+    "exit": 0,
+    "unprivileged": true,
+    "external_network_isolated": true,
+    "times": {
+      "start": "2026-10-28T12:51:32Z",
+      "finish": "2026-10-28T12:51:49Z"
+    }
+  },
+  "lifecycle": {
+    "install_twice": "passed",
+    "unit_verify": "passed without diagnostics",
+    "overlap": {
+      "exit": 3,
+      "collector_calls": 1
+    },
+    "running_memory": [
+      "VmHWM:\t   28356 kB",
+      "VmRSS:\t   28356 kB"
+    ],
+    "scheduled_runs": 2,
+    "resource_accounting": [
+      "Result=exit-code",
+      "MemoryPeak=[not set]",
+      "CPUUsageNSec=184801000"
+    ],
+    "restart_latch": "persisted across scheduled processes",
+    "secret_restriction_and_logs": "nobody denied; fake token absent from journal",
+    "uninstall": "units/code removed; exact DB, secrets, unrelated backup preserved"
+  },
+  "lifecycle_times": {
+    "start": "2026-10-28T12:52:00Z",
+    "finish": "2026-10-28T12:52:13Z"
+  },
+  "installed_native_preview_smoke": {
+    "started_at": "2026-10-28T12:53:15.434638+00:00",
+    "installed_show_policy_as_service_user": true,
+    "installed_notification_previews": [
+      {
+        "human_receipt_verified": false,
+        "preview": true,
+        "target_ref": "68dd7b5e79b0c031",
+        "type": "slack"
+      },
+      {
+        "human_receipt_verified": false,
+        "preview": true,
+        "target_ref": "cae0d79c40aa7080",
+        "type": "discord"
+      },
+      {
+        "human_receipt_verified": false,
+        "preview": true,
+        "target_ref": "341d7546cc2c6b81",
+        "type": "telegram"
+      },
+      {
+        "human_receipt_verified": false,
+        "preview": true,
+        "target_ref": "ee8404d526408a6d",
+        "type": "email"
+      }
+    ],
+    "all_secrets_unreadable": true,
+    "protected_file_count": 6,
+    "external_network_routes": 0,
+    "send_flag_used": false,
+    "state_bytes_unchanged": true,
+    "collector_count": 2,
+    "installed_lifecycle_schema": "6",
+    "notification_deliveries_table": true,
+    "units_loaded_inactive": true,
+    "uninstall_preserves_exact_db_synthetic_secrets_backup": true,
+    "finished_at": "2026-10-28T12:53:17.253967+00:00"
+  },
+  "posttest_source_matches_review_manifest": true,
+  "fixture_removed": true,
+  "final_wsl_inventory_empty": true,
+  "external_receiver_calls": false,
+  "provider_live_calls": false,
+  "real_credentials": false,
+  "source_edits": false
+}
