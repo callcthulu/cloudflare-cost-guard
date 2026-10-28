@@ -6,10 +6,10 @@ import os
 import re
 import stat
 from datetime import date, datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, DecimalException, InvalidOperation
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
-from .models import AccountConfig, Config, Price, ResourceConfig, ResourceKey, Threshold
+from .models import AccountConfig, BudgetWarning, Config, GuardBudget, Price, ResourceConfig, ResourceKey, Threshold
 
 
 class ConfigError(ValueError):
@@ -99,6 +99,96 @@ def _pairs(pairs):
     return result
 
 
+_NOTIFICATION_FILES = {'webhook': ('url_file',), 'slack': ('url_file',),
+                       'discord': ('url_file',), 'telegram': ('token_file', 'chat_id_file'),
+                       'email': ('settings_file',)}
+
+
+def notification_secret_files(configuration):
+    """Enumerate protected file references without reading their contents."""
+    if not configuration:
+        return ()
+    if 'targets' not in configuration:
+        return (configuration['url_file'],)
+    return tuple(dict.fromkeys(target[field] for target in configuration['targets']
+                               for field in _NOTIFICATION_FILES[target['type']]))
+
+
+def _notification(raw):
+    _object(raw, {'url_file', 'targets', 'max_attempts'})
+    result = {'max_attempts': _integer(raw.get('max_attempts', 3), 1, 10)}
+    if 'targets' not in raw:
+        if 'url_file' not in raw:
+            raise ConfigError('notification requires a destination')
+        return dict(result, url_file=_path(raw['url_file']))
+    if 'url_file' in raw or not isinstance(raw['targets'], list) or not 1 <= len(raw['targets']) <= 16:
+        raise ConfigError('notification requires one to sixteen explicit targets')
+    targets, identifiers = [], set()
+    for item in raw['targets']:
+        _object(item, {'id', 'type', 'url_file', 'token_file', 'chat_id_file', 'settings_file'}, {'id', 'type'})
+        kind = item['type']
+        if not isinstance(kind, str) or kind not in _NOTIFICATION_FILES:
+            raise ConfigError('unsupported notification type')
+        fields = _NOTIFICATION_FILES[kind]
+        _object(item, {'id', 'type', *fields}, {'id', 'type', *fields})
+        identity = _text(item['id'])
+        if not re.fullmatch(r'[a-z][a-z0-9_-]{0,63}', identity) or identity in identifiers:
+            raise ConfigError('invalid or duplicate notification target identity')
+        identifiers.add(identity)
+        targets.append({'id': identity, 'type': kind, **{field: _path(item[field]) for field in fields}})
+    return dict(result, targets=tuple(targets))
+
+
+def _guard_budget(raw, account, mode):
+    fields = {'hard_limit_usd', 'source', 'request_usd_per_million', 'cpu_usd_per_million_ms',
+              'cpu_ms_per_request', 'pricing_source', 'pricing_as_of', 'accept_approximate', 'accept_partial', 'warnings'}
+    _object(raw, fields, {'source'})
+    hard_limit = _decimal(raw['hard_limit_usd'], True) if raw.get('hard_limit_usd') is not None else None
+    warnings = []
+    thresholds = set()
+    if not isinstance(raw.get('warnings', []), list): raise ConfigError('budget warnings must be a list')
+    for entry in raw.get('warnings', []):
+        _object(entry, {'usd', 'percent'})
+        if len(entry) != 1: raise ConfigError('budget warning requires exactly one threshold')
+        if 'usd' in entry:
+            warning = BudgetWarning(usd=_decimal(entry['usd'], True))
+        else:
+            percent = _decimal(entry['percent'], True)
+            if hard_limit is None or percent >= 100:
+                raise ConfigError('percentage warning requires a hard limit and percent below 100')
+            warning = BudgetWarning(percent=percent)
+        try:
+            threshold = warning.threshold_usd(hard_limit)
+        except (DecimalException, ValueError):
+            raise ConfigError('unrepresentable effective budget warning') from None
+        if threshold in thresholds or hard_limit is not None and threshold >= hard_limit:
+            raise ConfigError('duplicate or nonadvance budget warning')
+        thresholds.add(threshold)
+        warnings.append(warning)
+    if account.currency != 'USD': raise ConfigError('guard budgets require USD')
+    source = _text(raw['source'])
+    if source not in {'workers_usage_estimate', 'account_rated_observed'}:
+        raise ConfigError('unsupported guard budget source')
+    approximate = _boolean(raw.get('accept_approximate', False))
+    partial = _boolean(raw.get('accept_partial', False))
+    price_fields = {'request_usd_per_million', 'cpu_usd_per_million_ms', 'cpu_ms_per_request', 'pricing_source', 'pricing_as_of'}
+    if source == 'workers_usage_estimate':
+        if price_fields - raw.keys(): raise ConfigError('guard pricing and provenance required')
+        rates = [_decimal(raw[field], True) for field in ('request_usd_per_million', 'cpu_usd_per_million_ms', 'cpu_ms_per_request')]
+        provenance = _text(raw['pricing_source'])
+        as_of = _text(raw['pricing_as_of'])
+        try: date.fromisoformat(as_of)
+        except ValueError: raise ConfigError('guard price date required') from None
+        if mode == 'enforce' and hard_limit is not None and not approximate:
+            raise ConfigError('approximate budget acceptance required')
+    else:
+        if price_fields & raw.keys(): raise ConfigError('rated budgets cannot include usage pricing')
+        rates, provenance, as_of = [Decimal('0')] * 3, '', ''
+    if mode == 'enforce' and hard_limit is not None and not partial:
+        raise ConfigError('partial budget acceptance required')
+    return GuardBudget(hard_limit, source, *rates, provenance, as_of, approximate, partial, tuple(warnings))
+
+
 def validate_admin_file(path: Path):
     """Linux policy: root-owned regular file, protected from non-admin replacement."""
     if os.name != "posix": return
@@ -153,7 +243,7 @@ def load_config(path: Path) -> Config:
     resources = []
     if not isinstance(raw.get("resources", []), list): raise ConfigError("resources must be a list")
     for r in raw.get("resources", []):
-        _object(r, {"account_id", "product", "resource_id", "name", "zones", "hostnames", "thresholds", "permitted_action", "executor_token_file", "approved_manifest_file", "approved_manifest_digest"}, {"account_id", "product", "resource_id", "name"})
+        _object(r, {"account_id", "product", "resource_id", "name", "zones", "hostnames", "thresholds", "permitted_action", "executor_token_file", "approved_manifest_file", "approved_manifest_digest", "budget"}, {"account_id", "product", "resource_id", "name"})
         key = ResourceKey(_provider_id(r["account_id"]), "resource", _resource_id(r["product"]), _resource_id(r["resource_id"]))
         if key.account_id not in account_map: raise ConfigError("resource account is not enrolled")
         zones = _strings(r.get("zones", []))
@@ -168,18 +258,29 @@ def load_config(path: Path) -> Config:
             thresholds.append(Threshold(_text(t["metric"]), limit, _text(t["unit"]), warning))
         if len({t.metric for t in thresholds}) != len(thresholds): raise ConfigError("duplicate threshold metric")
         action = r.get("permitted_action")
-        if action is not None and (action != "disable_worker_endpoints" or key.product != "workers"):
+        if action is not None and (action not in {"disable_worker_endpoints", "delete_worker"} or key.product != "workers"):
             raise ConfigError("unsupported permitted action")
+        budget = _guard_budget(r['budget'], account_map[key.account_id], mode) if 'budget' in r else None
+        if budget is not None and key.product != 'workers': raise ConfigError('unsupported guard budget product')
+        warning_only = budget is not None and budget.hard_limit_usd is None
+        if warning_only and {'permitted_action', 'executor_token_file', 'approved_manifest_file',
+                             'approved_manifest_digest'} & r.keys():
+            raise ConfigError('warning-only budgets cannot contain action or approval fields')
+        if action == 'delete_worker' and (budget is None or budget.hard_limit_usd is None):
+            raise ConfigError('deletion requires an explicit guard budget hard limit')
         digest = r.get("approved_manifest_digest")
         if digest is not None and (not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest)):
             raise ConfigError("invalid approval digest")
+        executor = _path(r['executor_token_file']) if r.get('executor_token_file') is not None else None
+        manifest = _path(r['approved_manifest_file']) if r.get('approved_manifest_file') is not None else None
+        if mode == 'enforce' and not warning_only and (action is None or executor is None or manifest is None or digest is None
+                                  or executor == account_map[key.account_id].read_token_file):
+            raise ConfigError('enforcement requires action, separate writer and pinned approval')
         resources.append(ResourceConfig(key, _text(r["name"]), zones, _strings(r.get("hostnames", [])), tuple(thresholds), action,
-            _path(r["executor_token_file"]) if r.get("executor_token_file") is not None else None,
-            _path(r["approved_manifest_file"]) if r.get("approved_manifest_file") is not None else None, digest))
+            executor, manifest, digest, budget))
     if len({r.key for r in resources}) != len(resources): raise ConfigError("duplicate resource identity")
     notification = raw.get("notification")
     if notification is not None:
-        _object(notification, {"url_file", "max_attempts"}, {"url_file"})
-        notification = {"url_file": _path(notification["url_file"]), "max_attempts": _integer(notification.get("max_attempts", 3), 1, 10)}
+        notification = _notification(notification)
     return Config(mode, tuple(accounts), tuple(resources), _path(raw.get("state_dir", "/var/lib/cloudflare-cost-guard")), notification,
                   _integer(raw.get("run_timeout_seconds", 240), 1, 299), _integer(raw.get("heartbeat_max_age_seconds", 660), 301, 86400))

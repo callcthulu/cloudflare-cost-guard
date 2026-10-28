@@ -82,6 +82,19 @@ def _rows(payload):
     return result
 
 
+def _fetch_exports(value):
+    """Only the documented default, uncached stateless Worker entrypoint."""
+    if value == {}:
+        return True
+    if not isinstance(value, dict) or set(value) != {"default"}:
+        return False
+    entry = value["default"]
+    return (isinstance(entry, dict) and set(entry) <= {"type", "state", "cache"}
+            and entry.get("type") == "worker" and entry.get("state", "created") == "created"
+            and isinstance(entry.get("cache"), dict) and set(entry["cache"]) == {"enabled"}
+            and entry["cache"]["enabled"] is False)
+
+
 class Client:
     def __init__(self, token_file, *, account_id=None, transport=None, timeout=10,
                  max_attempts=2, max_requests=80, max_body_bytes=2_000_000,
@@ -140,9 +153,13 @@ class Client:
         self.account_id = account_id
 
     def request(self, method, path, body=None):
-        if not isinstance(path, str) or not re.fullmatch(r"/[A-Za-z0-9_/-]+", path) or "//" in path:
+        if not isinstance(path, str):
             raise CloudflareError("invalid_api_path")
-        if method not in {"GET", "POST"}:
+        delete = method == "DELETE" and re.fullmatch(r"/accounts/[A-Za-z0-9_-]+/workers/scripts/[A-Za-z0-9_-]+\?force=false", path)
+        namespace_page = method == "GET" and re.fullmatch(r"/accounts/[A-Za-z0-9_-]+/workers/durable_objects/namespaces\?page=[1-9][0-9]{0,2}&per_page=1000", path)
+        if not (delete or namespace_page or re.fullmatch(r"/[A-Za-z0-9_/-]+", path)) or "//" in path:
+            raise CloudflareError("invalid_api_path")
+        if method not in {"GET", "POST", "DELETE"} or method == "DELETE" and (not delete or body is not None):
             raise CloudflareError("mutation_denied")
         graphql = method == "POST" and path == "/graphql"
         disable = method == "POST" and re.fullmatch(r"/accounts/[A-Za-z0-9_-]+/workers/scripts/[A-Za-z0-9_-]+/subdomain", path)
@@ -158,7 +175,7 @@ class Client:
                 self._bind(body["variables"]["accountTag"])
             except (KeyError, TypeError):
                 raise CloudflareError("graphql_account_identity") from None
-        attempts = self.max_attempts if not disable else 1
+        attempts = self.max_attempts if not (disable or delete) else 1
         for attempt in range(attempts):
             if self.requests >= self.max_requests:
                 raise CloudflareError("request_budget_exhausted")
@@ -174,6 +191,8 @@ class Client:
                     raise TimeoutError()
                 if not 200 <= response.status < 300:
                     raise CloudflareError("http_" + str(response.status))
+                if delete and not response.body:
+                    return {"success": True, "result": None}
                 payload = json.loads(response.body, parse_float=Decimal, parse_constant=lambda _: None)
                 if not isinstance(payload, dict) or payload.get("errors"):
                     raise CloudflareError("api_errors")
@@ -273,11 +292,13 @@ class Client:
             charges[source_key] = charge
         return tuple(charges.values())
 
-    def _workers(self, account_id, now, script=None):
+    def _workers(self, account_id, now, script=None, *, include_buckets=False):
         end = now.replace(second=0, microsecond=0)
         start = end - timedelta(minutes=5)
         rows_seen = set()
         totals = {}
+        buckets = {}
+        bucket_through = {}
         through = None
         query = '''query Guard($accountTag: string, $start: string, $end: string) {
           viewer { accounts(filter: {accountTag: $accountTag}) {
@@ -313,6 +334,9 @@ class Client:
                     if value != value.to_integral_value():
                         raise CloudflareError("graphql_request_unit")
                     totals[name] = totals.get(name, Decimal(0)) + value
+                    bucket = (lower, name)
+                    buckets[bucket] = buckets.get(bucket, Decimal(0)) + value
+                    bucket_through[bucket] = max(bucket_through.get(bucket, timestamp), timestamp)
                     through = max(through or timestamp, timestamp)
             except (KeyError, TypeError, AttributeError):
                 raise CloudflareError("graphql_schema") from None
@@ -321,7 +345,11 @@ class Client:
             observations.append(Observation(ResourceKey(account_id, "account", "workers"), "workers.requests", sum(totals.values(), Decimal(0)), "requests", start, end, now, through, "approximate", "graphql-workers-adaptive", True, None))
         for name, total in sorted(totals.items()):
             observations.append(Observation(ResourceKey(account_id, "resource", "workers", name), "workers.requests", total, "requests", start, end, now, through, "approximate", "graphql-workers-adaptive", True, None))
-        return tuple(observations)
+        minute_observations = tuple(Observation(ResourceKey(account_id, "resource", "workers", name),
+            "workers.requests", value, "requests", lower, lower + timedelta(minutes=1), now,
+            bucket_through[(lower, name)], "approximate", "graphql-workers-adaptive", True, None)
+            for (lower, name), value in sorted(buckets.items()))
+        return (tuple(observations), minute_observations) if include_buckets else tuple(observations)
 
     def collect(self, account, now, *, include_rated=True):
         self._bind(account.account_id)
@@ -362,13 +390,14 @@ class Client:
             except CloudflareError as error:
                 coverage["rated_usage"] = "unknown:" + str(error)
         try:
-            observations = self._workers(account.account_id, now)
+            observations, usage_buckets = self._workers(account.account_id, now, include_buckets=True)
             coverage["workers.requests"] = "approximate: rolling five-minute window; adaptive sampling status unknown"
         except CloudflareError as error:
+            usage_buckets = ()
             end = now.replace(second=0, microsecond=0)
             observations = (Observation(ResourceKey(account.account_id, "account", "workers"), "workers.requests", None, "requests", end - timedelta(minutes=5), end, now, None, "unknown", "graphql-workers-adaptive", False, None),)
             coverage["workers.requests"] = "unknown:" + str(error)
-        return Snapshot(account.account_id, observations, rated, tuple(subscriptions), coverage, now)
+        return Snapshot(account.account_id, observations, rated, tuple(subscriptions), coverage, now, usage_buckets)
 
     def _resource(self, resource):
         key = resource.key
@@ -408,6 +437,121 @@ class Client:
         if not isinstance(result, dict) or not all(type(result.get(flag)) is bool for flag in ("enabled", "previews_enabled")):
             raise CloudflareError("endpoint_flags_schema")
         return {flag: result[flag] for flag in ("enabled", "previews_enabled")}
+
+    def delete_worker(self, resource):
+        """Remove only this explicitly selected script; never override references."""
+        account, script = self._resource(resource)
+        self.request("DELETE", f"/accounts/{account}/workers/scripts/{script}?force=false")
+
+    def _owned_namespaces(self, account, script):
+        found, seen, expected_total = [], set(), None
+        for page in range(1, 81):
+            payload = self.request("GET", f"/accounts/{account}/workers/durable_objects/namespaces?page={page}&per_page=1000")
+            rows, info = payload.get("result"), payload.get("result_info")
+            if not isinstance(rows, list) or len(rows) > 1000 or not isinstance(info, dict):
+                raise CloudflareError("namespace_inventory_incomplete")
+            total, pages = info.get("total_count"), info.get("total_pages")
+            if (type(total) is not int or total < 0 or type(pages) is not int or pages < 0
+                    or info.get("page") != page or pages > 80 or page > max(1, pages)
+                    or expected_total is not None and expected_total != total):
+                raise CloudflareError("namespace_pagination_invalid")
+            expected_total = total
+            for row in rows:
+                if not isinstance(row, dict):
+                    raise CloudflareError("namespace_schema")
+                owner = _identifier(row.get("script"))
+                identity = _identifier(row.get("id"))
+                if identity in seen:
+                    raise CloudflareError("namespace_duplicate")
+                seen.add(identity)
+                if owner == script:
+                    found.append(row)
+            if page >= pages:
+                if len(seen) != total:
+                    raise CloudflareError("namespace_inventory_incomplete")
+                return found
+            if not rows:
+                raise CloudflareError("namespace_inventory_incomplete")
+        raise CloudflareError("namespace_inventory_incomplete")
+
+    def worker_cutoff_state(self, resource):
+        """Authenticated identity and stateless preflight; no public-probe guesses.
+
+        A fingerprint is a drift check, not an atomic DELETE precondition. The
+        operator must keep enrolled script identities stateless between checks.
+        """
+        account, script = self._resource(resource)
+        rows = _rows(self.request("GET", f"/accounts/{account}/workers/scripts"))
+        identities = [_identifier(row.get("id")) for row in rows]
+        if len(identities) != len(set(identities)):
+            raise CloudflareError("script_inventory_duplicate")
+        state = {"identity": {"account_id": account, "script_name": script}, "exists": script in identities,
+                 "fingerprint": None, "stateless": False, "reason": "worker_absent",
+                 "enabled": None, "previews_enabled": None, "cpu_ms": None}
+        if not state["exists"]:
+            return state
+        record = rows[identities.index(script)]
+        base = f"/accounts/{account}/workers/scripts/{script}"
+        settings = self.request("GET", base + "/settings").get("result")
+        deployments = self.request("GET", base + "/deployments").get("result")
+        if (not isinstance(settings, dict) or not isinstance(deployments, dict)
+                or not isinstance(deployments.get("deployments"), list) or not deployments["deployments"]):
+            raise CloudflareError("worker_settings_schema")
+        active = deployments["deployments"][0]
+        if not isinstance(active, dict) or not isinstance(active.get("versions"), list) or not active["versions"]:
+            raise CloudflareError("worker_deployment_schema")
+        _identifier(active.get("id"))
+        versions = []
+        for item in active["versions"]:
+            if not isinstance(item, dict):
+                raise CloudflareError("worker_version_schema")
+            version_id = _identifier(item.get("version_id"))
+            version = self.request("GET", base + "/versions/" + version_id).get("result")
+            if not isinstance(version, dict) or not isinstance(version.get("resources"), dict):
+                raise CloudflareError("worker_version_schema")
+            if (not isinstance(version["resources"].get("script"), dict)
+                    or not isinstance(version["resources"].get("script_runtime"), dict)
+                    or "id" in version and version["id"] != version_id):
+                raise CloudflareError("worker_version_schema")
+            versions.append(version["resources"])
+        owned = self._owned_namespaces(account, script)
+        flags = self.request("GET", base + "/subdomain").get("result")
+        if not isinstance(flags, dict) or not all(type(flags.get(f)) is bool for f in ("enabled", "previews_enabled")):
+            raise CloudflareError("endpoint_flags_schema")
+        state.update({f: flags[f] for f in ("enabled", "previews_enabled")})
+        limits = settings.get("limits")
+        if isinstance(limits, dict) and "cpu_ms" in limits:
+            state["cpu_ms"] = _number(limits["cpu_ms"])
+        # Hash locally without retaining/returning binding values or raw metadata.
+        content = json.dumps([account, script, record, settings, active, versions, owned],
+                             sort_keys=True, separators=(",", ":"), default=str)
+        state["fingerprint"] = hashlib.sha256(content.encode()).hexdigest()
+        reason = None
+        if owned:
+            reason = "owned_durable_objects"
+        elif len(active["versions"]) != 1 or _number(active["versions"][0].get("percentage")) != 100:
+            reason = "split_deployment_unsupported"
+        elif not isinstance(record.get("etag"), str) or not record["etag"] or record.get("has_assets") is not False:
+            reason = "script_metadata_unsupported"
+        elif record.get("migration_tag") or settings.get("migrations") or settings.get("containers"):
+            reason = "stateful_worker_unsupported"
+        elif settings.get("usage_model") != "standard":
+            reason = "usage_model_unsupported"
+        else:
+            metadata = [record] + [v.get("script") for v in versions]
+            if any(not isinstance(v, dict) or v.get("handlers") != ["fetch"]
+                   or v.get("named_handlers") not in ([], ()) for v in metadata):
+                reason = "worker_handlers_unsupported"
+            exports = [settings.get("exports", {}), record.get("exports", {})] + [v.get("script_runtime", {}).get("exports", {}) for v in versions]
+            if any(not _fetch_exports(e) for e in exports):
+                reason = "worker_exports_unsupported"
+            bindings = [settings.get("bindings")] + [v.get("bindings") for v in versions]
+            bindings = [[] if b == {} else b for b in bindings]
+            safe = {"plain_text", "secret_text", "json", "version_metadata"}
+            if any(not isinstance(b, list) or any(not isinstance(x, dict) or x.get("type") not in safe for x in b) for b in bindings):
+                reason = "worker_bindings_unsupported"
+        state.update(stateless=reason is None, reason=reason or "stateless_worker")
+        return state
 
     def fresh_trigger(self, resource, *, now=None):
         account, script = self._resource(resource)

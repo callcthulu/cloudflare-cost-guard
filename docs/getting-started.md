@@ -2,8 +2,9 @@
 
 This guide gets one reviewed account to a first read-only report. It does not
 buy a Cloudflare plan, deploy a Worker, change DNS or enable enforcement.
-Use an existing host only with its owner's approval. Installation does not publish
-this repository or require publishing your deployment configuration.
+Use an existing host only with its owner's approval. Initial installation is observe
+only. For optional destructive Worker cutoff, follow the separate
+[budget and arming guide](automatic-cutoff.md) after observing and reviewing the target.
 
 ## 1. Check the host and prerequisites
 
@@ -64,7 +65,7 @@ credential. Do not embed tokens in clone URLs, commands or shell history.
 ```sh
 git clone https://github.com/callcthulu/cloudflare-cost-guard.git "$HOME/cloudflare-cost-guard-review"
 cd "$HOME/cloudflare-cost-guard-review"
-DELIVERY_COMMIT=6bf35c783c7a7380b1243c8f7691122fc91b5b83
+DELIVERY_COMMIT=2d530d674e330473208bc75169289af9467ceca0
 test "${#DELIVERY_COMMIT}" -eq 40 || exit 1
 git fetch origin "$DELIVERY_COMMIT" || exit 1
 git switch --detach "$DELIVERY_COMMIT" || exit 1
@@ -73,16 +74,20 @@ git rev-parse HEAD
 /usr/bin/python3 -B -m unittest discover -s tests -v
 ```
 
-This full SHA pins the reviewed public source, including the subscription and
-billing-info fixes and the portable JSON-error regression test. See the
-[publication checks](publication-status.md). Retain `DELIVERY_COMMIT` for the export below.
+This full SHA pins the independently reviewed source including native notifications,
+multiple budget warnings and optional automatic Worker cutoff. Initial installation uses observe
+mode; arming is a separate step in the [cutoff guide](automatic-cutoff.md).
+See [native-notification evidence](native-notifications-evidence.md)
+for offline, disposable Linux and live-verification boundaries. Later documentation
+commits may update this guide without changing the pinned runtime.
+Retain `DELIVERY_COMMIT` for the export below.
 No separate evidence package or release tag is required. Review any later revision
 before substituting its full SHA. If this commit cannot be fetched, stop and check
 repository history; do not silently fall back to a moving branch.
 
 Review at least `cfguard/`, `deploy/install.py`, the two systemd units, the
 [capability matrix](capabilities.md), [threat model](threat-model.md) and
-[evidence](evidence.md). Tests are offline and use no provider credentials.
+[native-notification evidence](native-notifications-evidence.md). Tests are offline and use no provider credentials.
 
 ## 3. Move approved source under administrator control
 
@@ -239,13 +244,15 @@ successfully reads local state; it is not a provider health check.
 ## 6. Complete operational acceptance before scheduling
 
 Follow [notifications and scheduling](runbook.md#notifications-and-scheduling) to
-approve a generic HTTPS receiver, securely provision its URL, reinstall the
-updated source config and confirm actual receipt. Native Slack/Discord webhook
-compatibility is not implemented. Set up an independently hosted heartbeat using
+approve [native destinations or a generic HTTPS receiver](notifications.md),
+securely provision its protected files, reinstall the updated source config and
+confirm actual receipt with an explicitly selected synthetic test. Set up an independently hosted heartbeat using
 your existing approved monitoring tool; this utility cannot alert while its host
 is down. Do not enable a timer merely because validation passed.
 
 After those owner decisions, enable observe scheduling using the runbook. Verify
 two actual scheduled processes and retain a 24-hour source-availability record.
-These are live checks, separate from offline tests. Real production containment
-remains blocked; no executor credential belongs in this installation.
+These are live checks, separate from offline tests. No executor credential belongs
+in this initial observe installation. Automatic Worker cutoff has a separate
+[scope, approval and arming procedure](automatic-cutoff.md); source tests do not
+establish a live canary or a guaranteed maximum bill.

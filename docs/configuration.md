@@ -53,7 +53,7 @@ local labels; neither selects a provider resource.
 | `state_dir` | Absolute path, default `/var/lib/cloudflare-cost-guard`; installer requires this exact path. |
 | `run_timeout_seconds` | Integer 1–299, default 240. systemd still imposes 240 seconds; keep this at or below 240. |
 | `heartbeat_max_age_seconds` | Integer 301–86400, default 660. Detects gaps when a later run occurs; cannot detect a stopped host alone. |
-| `notification` | Omitted/null initially. Otherwise external HTTPS `url_file` and optional `max_attempts` 1–10, default 3. |
+| `notification` | Omitted/null initially. Otherwise 1–16 explicit `targets` or the legacy external HTTPS `url_file`; optional `max_attempts` 1–10 globally per run, default 3. |
 
 Each account requires `key`, `account_id`, `read_token_file`, `billing_day`,
 `budget` and `currency`. Optional account fields:
@@ -104,7 +104,8 @@ Thresholds use `metric`, decimal-string `limit`, `unit`, and optional decimal-st
 `warning` no higher than the limit. Current request metrics are
 `workers.requests` / `requests` for the **rolling five completed minutes**, not
 a monthly allowance. The real adapter marks them approximate and policy emits
-a warning even below the threshold; approximate data never authorizes cutoff.
+a warning even below the threshold. The legacy raw-threshold action cannot use
+approximate data. A separately approved budget signal can explicitly accept it.
 Missing activity/empty partitions can yield unknown rather than zero. Configuring
 `workers.cpu_ms` does not add CPU collection: it remains unsupported.
 
@@ -133,7 +134,15 @@ The installer requires root:cloudflare-cost-guard mode `0640` secrets and protec
 ancestors; state is service-owned mode `0700`. Windows checks do not validate
 POSIX ownership, so use Linux for deployment security validation.
 
-For an owner-approved generic HTTPS JSON receiver, add this top-level member:
+Use `notification.targets` for any combination of email, Telegram, Slack, Discord
+and generic HTTPS JSON destinations. Each target has a unique stable `id` matching
+`[a-z][a-z0-9_-]{0,63}` and a `type`. Keep actual URLs, tokens, chat IDs and SMTP
+settings in external protected files; config contains metadata and absolute paths.
+See [notification setup](notifications.md) for the four-channel fragment, secret
+file formats, preview/send commands and safe recipient changes. A
+[complete synthetic observe config](../config.notifications.example.json) is provided.
+
+Existing generic receivers keep this backward-compatible top-level member:
 
 ```json
 {
@@ -144,16 +153,61 @@ For an owner-approved generic HTTPS JSON receiver, add this top-level member:
 }
 ```
 
-Merge this member into the full config; this object is not a standalone config. The URL belongs in the protected
-file, never JSON/Git. `max_attempts` limits due **events per run**; failed events
-retry on later runs. This payload is not a native Slack/Discord message format.
-See [delivery setup](runbook.md#notifications-and-scheduling). Omitting notification
+Merge this fragment into a complete config. Do not combine `url_file` with
+`targets`. A generic receiver accepts the original incident JSON, rather than a
+native channel message. `max_attempts` bounds due **destination deliveries per run**,
+not lifetime retries; the bound is global across targets. Retries use bounded
+backoff. Missing files do not become a successful delivery. Omitting notification
 is safe for a first probe; a later run queues incidents and exits 5 while alerts
-remain pending.
+remain pending. Switching a legacy configuration to targets explicitly cancels
+unbound legacy pending deliveries while retaining evidence; it does not send that
+old backlog to the newly selected recipients.
 
 Optional resource enforcement fields are `permitted_action`,
 `executor_token_file`, `approved_manifest_file` and `approved_manifest_digest`
-(lowercase SHA-256). The sole action is `disable_worker_endpoints` for Workers.
-These fields grant no provider permission themselves. Install no executor
-credential initially; real enforcement remains blocked. Read
-[enforcement](enforcement.md) before considering a separately authorized canary.
+(lowercase SHA-256). Actions are `delete_worker` or `disable_worker_endpoints`,
+only for explicitly enrolled Workers. Deletion always requires a resource budget.
+In enforce mode, each resource with a hard limit requires an action, a separate
+writer path and pinned approval. Warning-only budget resources may coexist with
+armed resources, but must omit all action, writer and manifest fields. Initial installation stays observe-only with no writer references.
+These fields alone do not establish owner approval or provider permissions.
+
+## Automatic cutoff budget
+
+A resource may have a `budget` object. This is distinct from the account's alert
+`budget` amount. Start with [the synthetic observe example](../config.cutoff.example.json)
+and follow [automatic cutoff](automatic-cutoff.md) for scope, approval and arming.
+The example's prices are synthetic, its acceptance flags are false, and it contains
+no writer or approval references.
+
+| Budget field | Meaning |
+| --- | --- |
+| `hard_limit_usd` | Optional/null, or one positive Decimal string. A value enables a cutoff policy; it is an action trigger, not a maximum invoice. Account currency must be USD. |
+| `warnings` | Optional array, default `[]`. Each entry has exactly one positive Decimal-string `usd` or `percent`. USD values must be below an existing hard limit. Percentage values must be greater than 0 and less than 100 and require a hard limit. Effective USD thresholds must be unique. |
+| `source` | `workers_usage_estimate` or `account_rated_observed`. |
+| `request_usd_per_million` | Positive Decimal request rate for the usage source. |
+| `cpu_usd_per_million_ms` | Positive Decimal CPU-millisecond rate for the usage source. |
+| `cpu_ms_per_request` | Positive Decimal planning reserve per request; not measured CPU or a proven bound. |
+| `pricing_source`, `pricing_as_of` | Nonempty provenance and ISO date; required for the usage source. |
+| `accept_approximate` | Default false; must be true to enforce a usage estimate. |
+| `accept_partial` | Default false; must be true to enforce either source. |
+
+Usage cost accumulates captured per-minute request buckets in the account's UTC
+billing-day guard period, with maximum-count deduplication across polls. It applies
+request rate plus the CPU planning reserve, without subtracting shared allowances.
+The rated source uses the largest validated account charge line, not a sum or full
+balance, and rejects all five pricing/reserve/provenance fields. It binds an account
+trigger to an explicitly chosen Worker, without attributing its costs to that Worker.
+Both sources remain partial/unknown below budget. No R2/D1/Queues budget actions
+are implemented; unsupported product/action combinations are rejected.
+
+No hard limit means warning-only monitoring and no provider write for that resource.
+Only USD warnings are valid without a limit; `warnings: []` with a null/omitted
+limit tracks the signal without warnings or cutoff. See [budget alerts](budget-alerts.md)
+for examples, notification behavior and configuration updates.
+
+The version 2 approval digest covers identity, action, cutoff/source/pricing/quality
+semantics and account billing day/currency. Editing warnings alone does not invalidate
+the cutoff approval; changing a hard limit or the other covered semantics does.
+Quality acceptance alone never arms a write. See
+[the complete procedure](automatic-cutoff.md#review-and-pin-approval).

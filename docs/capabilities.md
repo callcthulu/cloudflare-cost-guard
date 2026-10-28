@@ -11,15 +11,19 @@ bill or a substitute for evaluating native controls. No billing settings are cha
 
 | Source | Implemented evidence | Limits and failure behavior |
 | --- | --- | --- |
-| Workers GraphQL | `sum.requests`, one account aggregate and distinct script breakdowns | Five disjoint one-minute partitions covering the previous five completed minutes. Adaptive analytics; sampling status is unknown, so every value is approximate and cannot authorize containment. No monthly total. |
+| Workers GraphQL | `sum.requests`, one account aggregate and distinct script breakdowns | Five disjoint one-minute partitions covering the previous five completed minutes. Adaptive analytics; sampling status is unknown, so every value is approximate. No provider monthly total. An explicit budget policy can accept captured minute buckets as a partial estimate. |
 | Workers CPU | None | The documented tutorial exposes CPU quantiles. No conversion of quantiles into a total; `workers.cpu_ms` is unsupported. |
 | Account subscriptions | Separate commitment inventory | Billing Read. Explicit subscription IDs and plan IDs required. Missing price/currency/identity is unknown. Plan IDs, such as `free`, match `expected_subscriptions`. |
 | Configured zone subscriptions | Singular subscription object per configured zone | Billing Read; `GET /zones/{zone_id}/subscription`. Endpoint appearances retain zone provenance but share account/provider identity with the account list. No automatic zone discovery. |
 | Billable Usage V1 info | Explicit account coverage and billing metadata | `GET /accounts/{account_id}/billable-usage/info`. `covered:false` is unavailable coverage, not zero spend or a permission failure. Missing/invalid info is unknown. Missing anchors leave the period unverified. |
 | Billable Usage V1 Alpha | Parsed incremental rated rows | Access must be probed. PascalCase contract only. Missing source update heartbeat prevents a complete/fresh total; positive parsed charges can still alert. Empty/denied responses mean unknown. |
 | Other products | Possible subscription/rated rows only | No fast usage adapter or containment. No complete account product inventory is claimed. |
-| Worker public endpoint inventory | Subdomain flags, account custom domains, configured-zone routes, cron schedules | Inbound bindings/queues and routes in other zones are not proven absent. `complete=false` blocks live enforcement. |
-| Subdomain disable | One POST setting both flags false | Explicit executor call only; collection never invokes it. No automatic write retry. Real enforcement remains unsupported without exact triggering evidence and complete inventory. |
+| Legacy endpoint inventory | Subdomain flags, account custom domains, configured-zone routes, cron schedules | Inbound bindings/queues and routes in other zones are not proven absent. `complete=false` blocks the legacy version 1 exact-evidence path. |
+| Usage-budget ledger | Captured disjoint one-minute requests per enrolled Worker, deduplicated across polls/restarts | Decimal gross estimate with explicit CPU planning reserve and no shared allowance; approximate/partial, unknown below threshold. Both quality acceptances required to act. |
+| Account-rated guard | Largest validated incremental USD account charge line | No sum without proven disjoint rows; delayed/partial floor. Explicit Worker target binding and partial acceptance, not attribution or complete invoice. |
+| Budget cutoff preflight | Exact script identity, settings, current deployment/versions, complete owned-namespace list | Single-version stateless HTTP only; missing metadata, assets, stateful/export/handler/binding features block. Does not freeze future deployments or eliminate read/write races. |
+| Subdomain disable | One POST setting both flags false | Version 2 armed budget action confirms API flags only; routes/internal invocations can continue. No automatic write retry. |
+| Worker deletion | One DELETE of exact script with fixed `force=false` | Destructive version 2 armed budget action; independent restore source and explicit owner acknowledgements. Read-only authenticated absence confirms script removal, not a final bill. |
 | Public probe | HTTPS GET without credentials | Only `*.workers.dev`, no redirects. A 2xx means reachable; other responses are unknown. Arbitrary Worker-generated 403/404 responses never prove provider cutoff. |
 
 ## Contract and pagination details
@@ -122,10 +126,12 @@ complete accepted-permission recipe: probe with the approved read token and
 record denial as unknown. Do not switch to a Global API key or broaden permissions
 to make a test pass. Exact account availability and token scopes remain a live gate.
 
-Observe collection does not need routing/script write permissions. Future separate
-inventory/canary authorization must verify current read permissions for each
-inventory endpoint; executor permissions can be broader than one Worker and are
-not contained by a local allowlist. No executor token is installed initially.
+Observe collection does not need script write permissions. Budget-cutoff preflight
+uses the reader for Scripts Read metadata and owned-namespace inventory. The
+separate writer needs Workers Scripts Write for its one action, without Analytics
+or Billing permissions. Exact availability/scope remains an authorized deployment
+check. Executor permissions can be broader than one Worker and are not contained
+by a local allowlist. No executor token is installed initially.
 
 Before enabling any complete rated total, verify the composite source identity
 against provider records and prove non-overlap per source series. Current code
@@ -133,6 +139,12 @@ does not claim that proof: the real rated total stays unknown, with positive
 parsed rows reported as alerts rather than a complete account balance.
 
 The [subdomain API](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/subdomain/)
-documents the only write, and [cron inventory](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/schedules/methods/get/)
-provides one internal-trigger check. Neither API proves that all internal invocations
-or storage charges have stopped.
+and [script deletion API](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/methods/delete/)
+document the two writes. [Script settings](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/script_and_version_settings/methods/get/),
+[active deployments](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/deployments/methods/list/),
+[version details](https://developers.cloudflare.com/api/resources/workers/subresources/scripts/subresources/versions/methods/get/)
+and [owned namespaces](https://developers.cloudflare.com/api/resources/durable_objects/subresources/namespaces/methods/list/)
+provide the stateless preflight evidence. No provider conditional DELETE contract
+eliminates a concurrent-deployment race. See [automatic cutoff](automatic-cutoff.md)
+for explicit approvals, scope, overshoot and recovery. Offline HTTP-adapter tests
+are not a live provider canary or proof of a maximum invoice.
