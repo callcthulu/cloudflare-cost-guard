@@ -136,6 +136,21 @@ class DeploymentTests(unittest.TestCase):
             self.assertIn(str(fixture.approval), readable)
             self.assertEqual(fixture.commands, [('systemctl', 'daemon-reload')])
 
+    def test_mixed_enforcement_install_keeps_warning_only_resource_without_writer(self):
+        with self.installation() as fixture:
+            warning_only = {'account_id': 'a'*32, 'product': 'workers', 'resource_id': 'warning-only',
+                            'name': 'Warning-only fixture',
+                            'budget': {'source': 'account_rated_observed', 'warnings': [{'usd': '5'}]}}
+            fixture.raw['resources'].append(warning_only)
+            fixture.config.write_text(json.dumps(fixture.raw), encoding='utf-8')
+            self.installer.install(fixture.config, allow_enforce=True)
+            installed = json.loads(fixture.mutations[str(self.installer.ETC/'config.json')])
+            self.assertEqual(len(installed['resources']), 2)
+            self.assertNotIn('executor_token_file', installed['resources'][1])
+            reads = [args[-1] for args in fixture.checks if args[0] == 'runuser']
+            self.assertEqual(reads.count(str(fixture.write)), 1)
+            self.assertEqual(fixture.commands, [('systemctl', 'daemon-reload')])
+
     def test_enforce_default_uninstalled_active_unreadable_or_unbudgeted_refused_before_writes(self):
         variants = [('default', {}, False), ('uninstalled', {'installed': False}, True),
                     ('active', {'unit_state': 'active'}, True), ('failed', {'unit_state': 'failed'}, True),

@@ -7,6 +7,15 @@ production-readiness certification is claimed.
 
 ### Added
 
+- Optional multiple USD/percentage resource-budget warnings, warning-only budgets
+  without a hard limit, and configuration-only `show-policy` inspection. Warning
+  edits preserve cutoff approval; equivalent effective warning thresholds share
+  period deduplication. Current policies appear alongside execution state in `status`.
+- Priority delivery for due notifications: cutoff outcomes before warnings before
+  routine events, within the shared per-run delivery limit. See
+  [budget alerts](docs/budget-alerts.md) and [verification](docs/budget-alerts-evidence.md).
+  Historical cutoff evidence is unchanged.
+
 - Optional automatic USD-budget cutoff for explicitly enrolled stateless HTTP
   Workers: destructive non-forced script deletion or workers.dev/preview-only
   disablement. Initial installation stays observe-only; existing installations

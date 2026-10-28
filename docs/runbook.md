@@ -25,7 +25,8 @@ an existing **owner-approved generic HTTPS JSON receiver**. It must accept the
 application's incident payload, deduplicate `incident_id`, and return HTTP 2xx
 only after durable acceptance. Delivery is at least once after an uncertain
 network timeout; HTTP acceptance is not human receipt. There is no built-in
-Slack/Discord message adapter or notification testing CLI.
+email, Slack or Discord message adapter or notification testing CLI. An external
+receiver must translate the generic JSON if those destinations are desired.
 
 A representative incident body is:
 
@@ -39,6 +40,13 @@ A representative incident body is:
   "metric": "rated_cost"
 }
 ```
+
+Budget events include value, hard limit (nullable), threshold, guard period, source
+quality and sanitized `resource_ref` context. Critical confirmed/blocked/uncertain
+cutoff events have priority 100; warnings have 10 and routine events 0. Due delivery
+uses that priority so routine backlog does not take the slots ahead of a cutoff.
+The default per-run limit is 3 events (configurable up to 10); it is shared by all
+due events, not a separate allowance per resource or warning.
 
 Scheduler/action event fields differ. Do not require every event to have every
 field above. Alert payloads omit raw resource inventory. Treat receiver URLs as
@@ -156,11 +164,20 @@ before proceeding; keep the timer stopped until every check succeeds.
 CFGUARD_SOURCE=/root/REPLACE_WITH_REVIEWED_PINNED_SOURCE_DIRECTORY
 sudo test -f "$CFGUARD_SOURCE/deploy/install.py" || exit 1
 sudoedit /root/cfguard-config.json
+sudo sh -c 'cd "$1" && exec /usr/bin/python3 -B -m cfguard validate --config /root/cfguard-config.json' cfguard-config "$CFGUARD_SOURCE"
+sudo sh -c 'cd "$1" && exec /usr/bin/python3 -B -m cfguard show-policy --config /root/cfguard-config.json' cfguard-config "$CFGUARD_SOURCE"
 sudo sh -c 'umask 022; exec /usr/bin/python3 -B "$1/deploy/install.py" install --config /root/cfguard-config.json' cfguard-install "$CFGUARD_SOURCE"
 sudo systemd-analyze verify /etc/systemd/system/cloudflare-cost-guard.service /etc/systemd/system/cloudflare-cost-guard.timer
 cfguard validate --config /etc/cloudflare-cost-guard/config.json
 cfguard probe --config /etc/cloudflare-cost-guard/config.json
 ```
+
+For warning/hard-limit edits, see [budget alerts](budget-alerts.md). Review
+`show-policy` before reinstalling: it uses configuration only, without state, token
+reads or provider calls. A threshold newly crossed by existing evidence may notify
+on the next run. Warning-only resources require no action/writer/manifest fields.
+For armed updates follow the separate `--allow-enforce` procedure; changing
+cutoff/source/pricing/quality/period semantics requires a new matching approval.
 
 The wrapper scopes `umask 022` to installer directory creation; it does not relax
 explicit secret/config/state modes or repair pre-existing directory permissions.

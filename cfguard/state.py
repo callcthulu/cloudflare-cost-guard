@@ -82,7 +82,7 @@ class RunLock:
 
 
 class Store:
-    SCHEMA_VERSION = '4'
+    SCHEMA_VERSION = '5'
 
     def __init__(self, path):
         path = private_directory(path) / 'guard.sqlite3'
@@ -93,7 +93,7 @@ class Store:
         self.db = sqlite3.connect(path, timeout=2, isolation_level=None)
         self.db.row_factory = sqlite3.Row
         meta_exists = self.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='meta'").fetchone()
-        if meta_exists and self.get_meta('schema_version') not in (None, '1', '2', '3', self.SCHEMA_VERSION):
+        if meta_exists and self.get_meta('schema_version') not in (None, '1', '2', '3', '4', self.SCHEMA_VERSION):
             self.db.close()
             raise ValueError('unsupported database schema')
         self.db.execute('PRAGMA journal_mode=DELETE')
@@ -106,7 +106,8 @@ class Store:
             CREATE TABLE IF NOT EXISTS incidents (id TEXT PRIMARY KEY, active INTEGER NOT NULL,
                 resource_key TEXT, generation INTEGER NOT NULL DEFAULT 1, dimension TEXT);
             CREATE TABLE IF NOT EXISTS outbox (id TEXT PRIMARY KEY, payload TEXT NOT NULL,
-                attempts INTEGER NOT NULL DEFAULT 0, next_at TEXT NOT NULL, delivered INTEGER NOT NULL DEFAULT 0);
+                attempts INTEGER NOT NULL DEFAULT 0, next_at TEXT NOT NULL, delivered INTEGER NOT NULL DEFAULT 0,
+                priority INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS intents (key TEXT PRIMARY KEY, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS budget_ledger (kind TEXT NOT NULL, key TEXT NOT NULL,
                 period TEXT NOT NULL, identity TEXT NOT NULL, payload TEXT NOT NULL,
@@ -115,7 +116,7 @@ class Store:
                 payload TEXT NOT NULL, archived_at TEXT NOT NULL);
         ''')
         version = self.get_meta('schema_version')
-        if version not in (None, '1', '2', '3', self.SCHEMA_VERSION):
+        if version not in (None, '1', '2', '3', '4', self.SCHEMA_VERSION):
             self.db.close()
             raise ValueError('unsupported database schema')
         with self.transaction():
@@ -126,6 +127,11 @@ class Store:
                 self.db.execute('ALTER TABLE incidents ADD COLUMN generation INTEGER NOT NULL DEFAULT 1')
             if 'dimension' not in columns:
                 self.db.execute('ALTER TABLE incidents ADD COLUMN dimension TEXT')
+            outbox_columns = {row['name'] for row in self.db.execute('PRAGMA table_info(outbox)')}
+            if 'priority' not in outbox_columns:
+                self.db.execute('ALTER TABLE outbox ADD COLUMN priority INTEGER NOT NULL DEFAULT 0')
+            if version != self.SCHEMA_VERSION:
+                self.db.execute("UPDATE outbox SET priority=100 WHERE id GLOB 'cutoff:*' OR id GLOB 'blocked:*'")
             self.set_meta('schema_version', self.SCHEMA_VERSION)
 
     def __enter__(self):
@@ -155,9 +161,11 @@ class Store:
         return {ResourceKey(**json.loads(row['key'])): ResourceState(**json.loads(row['state']))
                 for row in self.db.execute('SELECT * FROM resources')}
 
-    def enqueue(self, identity, payload, now):
-        self.db.execute('INSERT OR IGNORE INTO outbox(id,payload,next_at) VALUES (?,?,?)',
-                        (identity, encode(dict(payload, incident_id=identity)), now.isoformat()))
+    def enqueue(self, identity, payload, now, *, priority=0):
+        if type(priority) is not int or not 0 <= priority <= 100:
+            raise ValueError('notification priority must be an integer from 0 to 100')
+        self.db.execute('INSERT OR IGNORE INTO outbox(id,payload,next_at,priority) VALUES (?,?,?,?)',
+                        (identity, encode(dict(payload, incident_id=identity)), now.isoformat(), priority))
 
     def record_decisions(self, decisions, now):
         with self.transaction():
@@ -215,7 +223,7 @@ class Store:
                             (identity, value, value if valid else None))
 
     def pending_notifications(self, now, limit=5):
-        rows = self.db.execute('SELECT * FROM outbox WHERE delivered=0 AND next_at<=? ORDER BY next_at,id LIMIT ?',
+        rows = self.db.execute('SELECT * FROM outbox WHERE delivered=0 AND next_at<=? ORDER BY priority DESC,next_at,id LIMIT ?',
                                (now.isoformat(), min(max(limit, 0), 10))).fetchall()
         return [dict(row) | {'payload': json.loads(row['payload'])} for row in rows]
 
@@ -323,7 +331,7 @@ class Store:
             if backup.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
                 raise ValueError('corrupt backup')
             version = backup.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-            if version is None or version[0] not in ('1', '2', '3', cls.SCHEMA_VERSION):
+            if version is None or version[0] not in ('1', '2', '3', '4', cls.SCHEMA_VERSION):
                 raise ValueError('unsupported backup schema')
             fd = os.open(directory / 'guard.sqlite3', os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
             os.close(fd)

@@ -43,7 +43,9 @@ The guard never changes DNS, Access, routes, subscriptions or arbitrary commands
 
 The guard period uses the enrolled account's `billing_day` in UTC, clamped at
 month end. It is an accounting window for the guard, not proof of an invoice
-period. USD is required; `hard_limit_usd` is a positive Decimal string.
+period. USD is required; a configured `hard_limit_usd` is a positive Decimal string.
+It can be omitted/null for warning-only resources, which cannot authorize a write.
+Optional [budget warnings](budget-alerts.md) operate independently of cutoff approval.
 Account `budget` remains the older alert threshold; the resource's `budget` object
 controls automatic cutoff.
 
@@ -93,9 +95,11 @@ maximum overshoot is guaranteed. An independent host heartbeat is still needed.
 ## Prepare while remaining in observe mode
 
 Start with [getting started](getting-started.md), using reviewed feature source
-`9c6e16b817e0f3541c8fceb986342dd83d6535f3`. Do not substitute a moving branch on a
-real host. See [delivery evidence](automatic-cutoff-evidence.md) for tests, review
-and unverified live gates. Later guide-only changes leave this runtime pin intact.
+for the warning extension; its final reviewed delivery pin is pending. The earlier
+cutoff commit `9c6e16b817e0f3541c8fceb986342dd83d6535f3` does not support warnings
+or `show-policy`. Do not deploy this extension using that older pin or a moving
+branch. See [delivery evidence](automatic-cutoff-evidence.md) for the historical
+cutoff review and its unverified live gates; it does not verify this extension.
 If installed code predates the feature, first upgrade it in observe mode using the
 [reviewed-source update procedure](runbook.md#configuration-updates-upgrades-and-token-rotation).
 
@@ -140,8 +144,9 @@ The manifest is limited to 64 KiB; unknown/duplicate fields are rejected. It mus
 remain a root-owned regular file with protected parents and no group/world write.
 Review it locally; do not invent approval or backup evidence.
 Approval enrolls the exact account/script name, including its future versions;
-it is not pinned forever to the current deployment. Changing budget, price,
-quality choice, billing day, currency or action requires a fresh matching approval.
+it is not pinned forever to the current deployment. Changing the hard limit, source,
+price, quality choice, billing day, currency or action requires a fresh matching
+approval. Editing warning thresholds alone does not change the approval digest.
 The file-byte digest additionally pins the exact manifest content.
 
 Install a reviewed manifest under administrator control and hash the installed
@@ -192,8 +197,10 @@ cfguard enforce-preview --config /etc/cloudflare-cost-guard/config.json
 ```
 
 The last commands use the installed `cfguard` helper from getting-started.
-The installer requires every enrolled resource to have a supported budget action;
-keep monitor-only resources in an observe configuration. It validates existing
+Resources with a hard limit require a supported budget action. Warning-only
+budget resources can remain in the same enforce configuration, without
+`permitted_action`, `executor_token_file`, `approved_manifest_file` or
+`approved_manifest_digest`. It validates existing
 ownership/hashes and protected credential/approval paths; it does not start the
 timer. Once armed, scheduled runs can perform the approved write without another human confirmation. Review preview
 and deployment checks before explicitly restarting scheduling.
@@ -202,6 +209,14 @@ Preview performs provider reads but constructs no writer, sends no mutation and
 adds no ledger, outbox or action intent. An eligible preview reports `not_applied`
 with reason `preview_eligible`; it does not establish a live cutoff. It may need
 existing accumulated ledger evidence to reach the budget. `probe` is also read-only.
+
+To convert an armed resource to warning-only, stop scheduling and first prepare
+an observe source configuration. Preserve the original configuration and manifests
+for any unresolved intent and reconcile it read-only before changing its semantics.
+Then remove the resource's action/writer/manifest fields and set its hard limit to
+null (converting any percentage warnings to USD). A null limit with remaining
+action fields is rejected. Apply through the [managed update procedure](runbook.md#configuration-updates-upgrades-and-token-rotation);
+never edit the installed config directly.
 
 ## Result and recovery
 
@@ -230,6 +245,7 @@ attempts block rearm. If the same period's usage is still above budget, a later
 armed run can act again. Restoration is a separate operator action; first disarm
 and review the cause, independent source and remaining budget.
 
-State schema 4 adds the ledger and intent history while preserving existing data.
+State schema 4 added the ledger and intent history; schema 5 adds notification
+priority while preserving existing data and promotes queued legacy cutoff events.
 Back up before upgrade; there is no downgrade migration. Historical implementation
 and publication records describe their dated scope, not live proof of this feature.

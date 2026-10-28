@@ -1,12 +1,16 @@
 # Cloudflare Cost Guard
 
 Self-hosted automatic budget cutoff for explicitly selected stateless Cloudflare
-Workers, with read-only monitoring as the default. Runs on an existing Linux host
-with Python 3.11+, SQLite and a systemd timer. No runtime dependencies to install.
+Workers, with configurable budget warnings and read-only monitoring as the default.
+Runs on an existing Linux host with Python 3.11+, SQLite and a systemd timer.
+No runtime dependencies to install.
 
 Once armed, the guard automatically deletes the approved Worker (`force=false`)
 or disables its workers.dev/preview flags when the selected USD signal reaches
-`hard_limit_usd`. No approval is requested per incident. Deletion is destructive;
+`hard_limit_usd`. Budget warnings are independent: configure any number of USD
+or percentage thresholds, or omit the hard limit for warning-only monitoring.
+See [budget alerts](docs/budget-alerts.md) for editable examples and safe updates.
+No approval is requested per cutoff incident. Deletion is destructive;
 endpoint disablement covers only those flags. Follow [automatic cutoff](docs/automatic-cutoff.md)
 for supported targets, one-time approval, independent restore source and arming.
 
@@ -40,13 +44,16 @@ The [getting-started guide](docs/getting-started.md#5-install-validate-and-probe
 defines the installed `cfguard` shell helper. With that helper:
 
 ```sh
+cfguard show-policy --config /etc/cloudflare-cost-guard/config.json
 cfguard probe --config /etc/cloudflare-cost-guard/config.json
 cfguard run --config /etc/cloudflare-cost-guard/config.json
 cfguard status --config /etc/cloudflare-cost-guard/config.json
 ```
 
-`probe` collects read-only evidence without sending alerts; `run` evaluates policy
-and delivers queued alerts; `status` reads local state. Unknown or warning results
+`show-policy` displays sanitized current policies without provider calls, token
+reads or opening state. `probe` collects read-only evidence without sending alerts;
+`run` evaluates policy and delivers queued alerts; `status` reads local execution
+state and displays current policies. Unknown or warning results
 need attention. With no notification receiver, pending alerts can produce exit 5;
 that does not establish collection health or alert receipt. See
 [configuration](docs/configuration.md), [operations](docs/runbook.md) and
@@ -62,6 +69,8 @@ provider access, notification delivery or a maximum bill.
 
 The [cutoff evidence](docs/automatic-cutoff-evidence.md) records regression tests,
 independent security review and disposable Linux lifecycle verification.
+The [budget-alert evidence](docs/budget-alerts-evidence.md) covers multiple warnings,
+optional cutoff, priority delivery and policy inspection.
 
 ## Contribute
 

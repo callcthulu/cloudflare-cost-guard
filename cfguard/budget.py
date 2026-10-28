@@ -7,11 +7,11 @@ action at a threshold; it does not turn a partial estimate into an invoice.
 import hashlib
 from dataclasses import asdict
 from datetime import timedelta
-from decimal import Decimal, localcontext
+from decimal import Decimal, DecimalException, MAX_EMAX, MIN_EMIN, localcontext
 
 from .config import billing_window
 from .models import Decision, ResourceKey
-from .state import encode
+from .state import encode, resource_label
 
 
 def _decimal_text(value):
@@ -30,7 +30,7 @@ def policy_digest(resource, account):
     if account.account_id != resource.key.account_id:
         raise ValueError('guard approval account identity mismatch')
     budget = {key: _decimal_text(value) if isinstance(value, Decimal) else value
-              for key, value in asdict(resource.budget).items()} if resource.budget else None
+              for key, value in asdict(resource.budget).items() if key != 'warnings'} if resource.budget else None
     return hashlib.sha256(encode({'resource': asdict(resource.key), 'action': resource.permitted_action,
                                  'budget': budget, 'guard_period': {
                                      'model': 'utc-monthly-billing-day-clamped-v1',
@@ -43,7 +43,8 @@ def _amount(value):
 
 
 def _valid_budget(budget):
-    if budget is None or not _amount(budget.hard_limit_usd) or budget.hard_limit_usd == 0:
+    if budget is None or (budget.hard_limit_usd is not None
+                          and (not _amount(budget.hard_limit_usd) or budget.hard_limit_usd == 0)):
         return False
     if type(budget.accept_partial) is not bool or type(budget.accept_approximate) is not bool:
         return False
@@ -51,6 +52,76 @@ def _valid_budget(budget):
     if budget.source == 'workers_usage_estimate':
         return all(_amount(rate) and rate > 0 for rate in rates) and bool(budget.pricing_source and budget.pricing_as_of)
     return budget.source == 'account_rated_observed' and all(_amount(rate) and rate == 0 for rate in rates)
+
+
+def warning_threshold_usd(budget, warning):
+    """Resolve a validated warning to exact USD; independent of observed usage."""
+    return warning.threshold_usd(budget.hard_limit_usd)
+
+
+def _valid_warning_value(resource, decision):
+    budget = resource.budget
+    if not _valid_budget(budget):
+        return False
+    prefix = ('estimated_requests_cpu_reserve_partial' if budget.source == 'workers_usage_estimate'
+              else 'largest_rated_line_floor_partial')
+    return (decision.key == resource.key and decision.metric == 'guard_cost_usd'
+            and decision.unit == 'currency' and decision.currency == 'USD' and _amount(decision.value)
+            and decision.period_start is not None and decision.period_end is not None
+            and all(value.tzinfo is not None and value.utcoffset().total_seconds() == 0
+                    for value in (decision.period_start, decision.period_end))
+            and decision.period_start < decision.period_end
+            and decision.reason_code in {prefix + suffix for suffix in (
+                '_budget_reached', '_quality_unaccepted', '_below_budget_unknown', '_tracking_only_unknown')})
+
+
+def budget_context(resource, decision):
+    """Sanitized guard context, with source quality explicit even for unknown status."""
+    budget = resource.budget
+    value = decision.value if _valid_warning_value(resource, decision) else None
+    hard_limit = budget.hard_limit_usd if budget is not None else None
+    percent = None
+    if value is not None and _amount(hard_limit) and hard_limit > 0:
+        try:
+            with localcontext() as context:
+                context.prec = max(50, len(value.as_tuple().digits) + len(hard_limit.as_tuple().digits) + 20)
+                context.Emax, context.Emin = MAX_EMAX, MIN_EMIN
+                ratio = value / hard_limit * Decimal('100')
+                if ratio.is_finite() and (ratio != 0 or value == 0):
+                    percent = str(ratio)
+        except DecimalException:
+            # Display context must never prevent the warning or action itself.
+            pass
+    return {'resource_ref': resource_label(resource.key), 'metric': 'guard_cost_usd',
+            'value': str(value) if value is not None else None,
+            'hard_limit_usd': str(hard_limit) if hard_limit is not None else None,
+            'percent_of_hard_limit': percent, 'currency': 'USD',
+            'period_start': decision.period_start.isoformat() if decision.period_start is not None else None,
+            'period_end': decision.period_end.isoformat() if decision.period_end is not None else None,
+            'source': budget.source if budget is not None else None,
+            'quality': ('approximate_partial' if budget.source == 'workers_usage_estimate' else 'partial')
+                       if value is not None else 'unknown'}
+
+
+def budget_warning_events(resource, decision):
+    """Crossed notification-only thresholds; persistence and delivery belong to runner."""
+    if not _valid_warning_value(resource, decision):
+        return ()
+    budget = resource.budget
+    context = budget_context(resource, decision)
+    events = []
+    for warning in budget.warnings:
+        threshold = warning_threshold_usd(budget, warning)
+        if decision.value < threshold:
+            continue
+        identity = hashlib.sha256(encode({'resource': asdict(resource.key), 'source': budget.source,
+            'period_start': context['period_start'], 'period_end': context['period_end'],
+            'threshold_usd': _decimal_text(threshold)}).encode()).hexdigest()
+        events.append(('budget-warning:' + identity,
+            {**context, 'reason_code': 'budget_warning', 'status': 'warning',
+             'threshold_usd': str(threshold),
+             'warning_percent': str(warning.percent) if warning.percent is not None else None}))
+    return tuple(events)
 
 
 def _usage(resource, snapshot, store, start, end, now, persist):
@@ -171,6 +242,8 @@ def evaluate_budget(config, resource, snapshot, store, now, *, persist=True):
             reason += '_conflicting_or_invalid'
         elif value is None:
             reason += '_missing'
+        elif budget.hard_limit_usd is None:
+            reason += '_tracking_only_unknown'
         elif not accepted:
             reason += '_quality_unaccepted'
         elif value >= budget.hard_limit_usd:

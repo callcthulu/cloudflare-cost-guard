@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, Inexact, MAX_EMAX, MIN_EMIN, Overflow, Underflow, localcontext
 from pathlib import Path
 from typing import Mapping
 
@@ -175,8 +175,29 @@ class AccountConfig:
 
 
 @dataclass(frozen=True)
+class BudgetWarning:
+    usd: Decimal | None = None
+    percent: Decimal | None = None
+
+    def threshold_usd(self, hard_limit_usd):
+        """Resolve an already-validated warning without rounding its identity."""
+        if self.usd is not None:
+            threshold = self.usd
+        else:
+            with localcontext() as context:
+                context.prec = max(28, len(self.percent.as_tuple().digits) + len(hard_limit_usd.as_tuple().digits))
+                context.Emax, context.Emin = MAX_EMAX, MIN_EMIN
+                for signal in (Inexact, Underflow, Overflow):
+                    context.traps[signal] = True
+                threshold = (self.percent / Decimal('100')) * hard_limit_usd
+        if not threshold.is_finite() or threshold <= 0:
+            raise ValueError('invalid effective budget warning')
+        return threshold
+
+
+@dataclass(frozen=True)
 class GuardBudget:
-    hard_limit_usd: Decimal
+    hard_limit_usd: Decimal | None
     source: str
     request_usd_per_million: Decimal = Decimal('0')
     cpu_usd_per_million_ms: Decimal = Decimal('0')
@@ -185,6 +206,7 @@ class GuardBudget:
     pricing_as_of: str = ''
     accept_approximate: bool = False
     accept_partial: bool = False
+    warnings: tuple[BudgetWarning, ...] = ()
 
 
 @dataclass(frozen=True)

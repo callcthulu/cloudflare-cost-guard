@@ -20,6 +20,107 @@ NOW = datetime(2026, 10, 27, 12, tzinfo=timezone.utc)
 
 
 class CutoffRunnerTests(unittest.TestCase):
+    def warning_budget(self, *, hard_limit='.001'):
+        from cfguard import models
+        self.assertTrue(hasattr(models, 'BudgetWarning'), 'multiple budget warnings are not implemented')
+        return replace(self.resource.budget, hard_limit_usd=D(hard_limit) if hard_limit else None,
+                       warnings=(models.BudgetWarning(usd=D('.00005')),
+                                 models.BudgetWarning(usd=D('.0001'))))
+
+    def budget_events(self, config, reason):
+        with Store(config.state_dir) as store:
+            return [json.loads(row['payload']) for row in store.db.execute('SELECT payload FROM outbox')
+                    if json.loads(row['payload']).get('reason_code') == reason]
+
+    def test_multiple_budget_warnings_are_contextual_and_deduplicate_across_runs(self):
+        config = self.config(mode='observe', budget=self.warning_budget())
+        self.run_guard(config)
+        self.run_guard(config)
+        events = self.budget_events(config, 'budget_warning')
+        self.assertEqual(len(events), 2)
+        self.assertEqual({D(event['threshold_usd']) for event in events}, {D('.00005'), D('.0001')})
+        for event in events:
+            self.assertEqual(D(event['value']), D('.00051'))
+            self.assertEqual(D(event['hard_limit_usd']), D('.001'))
+            self.assertEqual(event['quality'], 'approximate_partial')
+            self.assertTrue(event['period_start'].startswith('2026-10-01'))
+            self.assertEqual(event['currency'], 'USD')
+        self.assertFalse(self.deleted)
+        self.assertNotIn(self.write, self.factories)
+
+    def test_warning_only_resource_in_enforce_never_constructs_writer_or_intent(self):
+        config = self.config(mode='observe', budget=self.warning_budget(hard_limit=None))
+        resource = replace(config.resources[0], permitted_action=None, executor_token_file=None,
+                           approved_manifest_file=None, approved_manifest_digest=None)
+        config = replace(config, mode='enforce', resources=(resource,))
+        _, report = self.run_guard(config)
+        self.assertEqual(len(self.budget_events(config, 'budget_warning')), 2)
+        self.assertEqual(report['actions'], [])
+        self.assertNotIn(self.write, self.factories)
+        with Store(config.state_dir) as store:
+            self.assertIsNone(store.intent(resource.key))
+
+    def test_budget_warnings_never_enqueue_during_probe_or_preview(self):
+        config = self.config(budget=self.warning_budget())
+        for options in ({'probe': True}, {'preview': True}):
+            self.run_guard(config, **options)
+            self.assertEqual(self.budget_events(config, 'budget_warning'), [])
+            self.assertNotIn(self.write, self.factories)
+
+    def test_confirmed_cutoff_notification_is_prioritized_and_has_budget_context(self):
+        config = self.config()
+        destination = self.root / 'notification.url'
+        destination.write_text('https://receiver.example.invalid/synthetic')
+        destination.chmod(0o600)
+        config = replace(config, notification={'url_file': destination, 'max_attempts': 1})
+        with Store(config.state_dir) as store:
+            for i in range(12):
+                store.enqueue('routine:' + str(i), {'reason_code': 'routine_fixture'}, NOW)
+        bodies = []
+        def post(url, body):
+            bodies.append(json.loads(body))
+            return 204
+        with patch('cfguard.notify._post', side_effect=post):
+            _, report = self.run_guard(config)
+        self.assertTrue(self.deleted)
+        self.assertEqual(report['notification']['delivered'], 1)
+        self.assertEqual(bodies[0]['reason_code'], 'cutoff_result')
+        self.assertEqual(bodies[0]['status'], 'worker_deleted')
+        self.assertEqual(bodies[0]['action'], 'delete_worker')
+        self.assertEqual(bodies[0]['quality'], 'approximate_partial')
+        self.assertEqual(D(bodies[0]['value']), D('.00051'))
+        self.assertEqual(D(bodies[0]['hard_limit_usd']), D('.0001'))
+        self.assertEqual(bodies[0]['scope'], 'worker_script')
+        self.assertNotIn('demo-worker', json.dumps(bodies))
+
+    def test_notification_failure_cannot_prevent_automatic_cutoff(self):
+        config = self.config()
+        destination = self.root / 'notification.url'
+        destination.write_text('https://receiver.example.invalid/synthetic')
+        destination.chmod(0o600)
+        config = replace(config, notification={'url_file': destination, 'max_attempts': 1})
+        with patch('cfguard.notify._post', side_effect=TimeoutError('synthetic receiver unavailable')):
+            code, report = self.run_guard(config)
+        self.assertTrue(self.deleted)
+        self.assertEqual(code, 5)
+        self.assertEqual(report['notification']['failed'], 1)
+        pending = self.budget_events(config, 'cutoff_result')
+        self.assertEqual(pending[0]['status'], 'worker_deleted')
+        self.assertIn('hard_limit_usd', pending[0])
+
+    def test_delivered_warning_has_exit_four_but_collection_stays_unknown(self):
+        config = self.config(mode='observe', budget=self.warning_budget())
+        destination = self.root / 'notification.url'
+        destination.write_text('https://receiver.example.invalid/synthetic')
+        destination.chmod(0o600)
+        config = replace(config, notification={'url_file': destination, 'max_attempts': 10})
+        with patch('cfguard.notify._post', return_value=204):
+            code, report = self.run_guard(config)
+        self.assertEqual(code, 4)
+        self.assertEqual(report['collection'], 'unknown')
+        self.assertEqual(len(report['budget_warnings']), 2)
+        self.assertEqual(report['notification']['pending'], 0)
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)

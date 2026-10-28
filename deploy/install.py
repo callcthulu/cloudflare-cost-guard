@@ -222,9 +222,12 @@ def install(config_path, *, allow_enforce=False):
             UNITS / f'{NAME}.service', UNITS / f'{NAME}.timer')}
         if not required <= marker['files'].keys():
             raise InstallError('enforcement requires an existing complete managed installation')
-        if (config.mode != 'enforce' or not config.resources
-                or any(resource.budget is None or resource.permitted_action not in
-                       {'delete_worker', 'disable_worker_endpoints'} for resource in config.resources)):
+        cutoff_resources = [r for r in config.resources if r.budget is not None
+                            and r.budget.hard_limit_usd is not None]
+        if (config.mode != 'enforce' or not cutoff_resources
+                or any(resource.budget is None for resource in config.resources)
+                or any(resource.permitted_action not in {'delete_worker', 'disable_worker_endpoints'}
+                       for resource in cutoff_resources)):
             raise InstallError('enforcement installation requires explicit supported budget guards')
     elif config.mode != 'observe' or any(r.executor_token_file is not None for r in config.resources):
         raise InstallError('initial installer requires observe mode without executor credentials')
@@ -234,7 +237,7 @@ def install(config_path, *, allow_enforce=False):
     if config.notification:
         secrets.append(config.notification['url_file'])
     if allow_enforce:
-        for resource in config.resources:
+        for resource in cutoff_resources:
             secrets.extend((resource.executor_token_file, resource.approved_manifest_file))
     for secret in secrets:
         safe_path(secret)
