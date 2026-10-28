@@ -33,7 +33,7 @@ by itself.
 ```text
 Prepare Cloudflare Cost Guard for my explicitly enrolled resources.
 Repository: https://github.com/callcthulu/cloudflare-cost-guard
-Reviewed source commit: 2d530d674e330473208bc75169289af9467ceca0
+Reviewed source commit: cc1ea53f0e0b0fcf5c6d1936a78a0c599f915d85
 Existing host connection profile: [approved profile reference, no key contents]
 
 Read AGENTS.md, README.md, docs/getting-started.md, docs/capabilities.md,

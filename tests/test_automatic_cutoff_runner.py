@@ -1,5 +1,6 @@
 """Real collector/runner/action integration with synthetic HTTP and credentials."""
 import hashlib
+import http.client
 import json
 import tempfile
 import unittest
@@ -20,6 +21,26 @@ NOW = datetime(2026, 10, 27, 12, tzinfo=timezone.utc)
 
 
 class CutoffRunnerTests(unittest.TestCase):
+    def test_malformed_delete_response_after_application_reconciles_read_only(self):
+        config=self.config()
+        original=self.transport
+        def malformed(request,timeout):
+            response=original(request,timeout)
+            if request.method=='DELETE':
+                raise http.client.BadStatusLine('SYNTHETIC_PRIVATE_RESPONSE')
+            return response
+        self.transport=malformed
+        _,report=self.run_guard(config)
+        self.assertTrue(self.deleted)
+        self.assertEqual(report['actions'][0]['status'],'worker_deleted')
+        self.assertTrue(self.calls[-1][1].endswith('/workers/scripts'))
+        self.run_guard(config)
+        self.assertEqual(sum(method=='DELETE' for method,*_ in self.calls),1)
+        self.assertNotIn('SYNTHETIC_PRIVATE_RESPONSE',json.dumps(report))
+        with Store(config.state_dir) as store:
+            self.assertEqual(store.intent(self.resource.key)['status'],'worker_deleted')
+            self.assertIsNotNone(store.get_meta('last_finished'))
+
     def warning_budget(self, *, hard_limit='.001'):
         from cfguard import models
         self.assertTrue(hasattr(models, 'BudgetWarning'), 'multiple budget warnings are not implemented')

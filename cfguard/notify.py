@@ -310,7 +310,7 @@ def deliver(store, configuration, now, *, transport=None, smtp_factory=None):
                 body = json.dumps(event['payload'], sort_keys=True, allow_nan=False).encode()
                 status = (transport or _post)(destination, body)
                 success = isinstance(status, int) and 200 <= status < 300
-            except (OSError, ValueError, KeyError, TypeError):
+            except (OSError, ValueError, KeyError, TypeError, http.client.HTTPException):
                 # Never log exceptions: network libraries may include secret URLs.
                 success = False
             store.notification_result(event['id'], success, now)

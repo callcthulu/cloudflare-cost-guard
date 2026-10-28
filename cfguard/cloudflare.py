@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
@@ -199,7 +200,7 @@ class Client:
                 if not graphql and payload.get("success") is not True:
                     raise CloudflareError("api_unsuccessful")
                 return payload
-            except (TimeoutError, OSError, urllib.error.URLError):
+            except (TimeoutError, OSError, urllib.error.URLError, http.client.HTTPException):
                 if attempt + 1 == attempts:
                     raise CloudflareError("transport_unavailable") from None
                 self.sleep(min(2 ** attempt, 2))
@@ -576,7 +577,7 @@ class Client:
             # Arbitrary 403/404 can come from a still-running Worker. No status alone
             # is a documented provider cutoff signature, so never certify it blocked.
             return "reachable" if 200 <= response.status < 300 else "unknown"
-        except (OSError, TimeoutError, urllib.error.URLError):
+        except (OSError, TimeoutError, urllib.error.URLError, http.client.HTTPException):
             return "unknown"
 
 

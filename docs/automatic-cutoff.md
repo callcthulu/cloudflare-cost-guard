@@ -95,7 +95,7 @@ maximum overshoot is guaranteed. An independent host heartbeat is still needed.
 ## Prepare while remaining in observe mode
 
 Start with [getting started](getting-started.md), using reviewed source
-`2d530d674e330473208bc75169289af9467ceca0`. It includes native notifications,
+`cc1ea53f0e0b0fcf5c6d1936a78a0c599f915d85`. It includes native notifications,
 warnings, optional cutoff and `show-policy`; see [delivery evidence](native-notifications-evidence.md). Do not
 substitute a moving branch. Later guide-only updates leave this runtime pin intact.
 If installed code predates the feature, first upgrade it in observe mode using the
@@ -208,13 +208,26 @@ adds no ledger, outbox or action intent. An eligible preview reports `not_applie
 with reason `preview_eligible`; it does not establish a live cutoff. It may need
 existing accumulated ledger evidence to reach the budget. `probe` is also read-only.
 
-To convert an armed resource to warning-only, stop scheduling and first prepare
-an observe source configuration. Preserve the original configuration and manifests
-for any unresolved intent and reconcile it read-only before changing its semantics.
-Then remove the resource's action/writer/manifest fields and set its hard limit to
-null (converting any percentage warnings to USD). A null limit with remaining
-action fields is rejected. Apply through the [managed update procedure](runbook.md#configuration-updates-upgrades-and-token-rotation);
+To disarm, stop the timer, let any active service/direct CLI run finish, then stop
+the service and confirm both units are inactive. Do not interrupt an action in
+flight. Preserve the original enforce configuration and manifests privately.
+Prepare a separate observe source copy and remove every `executor_token_file`
+reference: the ordinary installer rejects observe configs containing writer
+references. Retain the existing hard limit, action and approval semantics while
+any intent remains unresolved. Apply through the
+[managed update procedure](runbook.md#configuration-updates-upgrades-and-token-rotation);
 never edit the installed config directly.
+
+Observe mode does not reconcile saved budget attempts. `enforce-preview` using
+the preserved enforce policy can inspect them read-only, but does not persist
+reconciliation. Such runtime inspection must use the documented service identity
+and a protected service-readable config, not root against a root-only source file.
+Pending/uncertain attempts require separately owner-reviewed resolution or
+recovery. Do not use an enforce `run` merely to inspect them, change their policy
+semantics to force a retry, or clear SQLite. Once resolved, conversion to warning-only
+requires removing all action/writer/manifest fields and setting the hard limit to
+null, with percentage warnings converted to USD. A null limit with remaining action
+fields is rejected.
 
 ## Result and recovery
 
@@ -230,7 +243,7 @@ state out of enrolled script identities and coordinate deployments with the guar
 | `not_applied` | Preflight blocked, read-only preview, or definite writer 401/403 rejection with successful read-back. Inspect the reason; a recorded attempt needs manual rearm. |
 | `uncertain` | The provider outcome cannot be confirmed. A timeout may still have applied the action. |
 
-Subsequent runs reconcile saved attempts read-only. They never automatically retry
+Subsequent enforce runs reconcile saved attempts read-only. They never automatically retry
 writes, recreate a script or re-enable endpoints. Retain the pinned manifest for
 reconciliation; its expiry forbids a new action but does not prohibit reading back
 an existing attempt. Review uncertainty without deleting state or replacing an
@@ -243,7 +256,11 @@ attempts block rearm. If the same period's usage is still above budget, a later
 armed run can act again. Restoration is a separate operator action; first disarm
 and review the cause, independent source and remaining budget.
 
-State schema 4 added the ledger and intent history; schema 5 adds notification
-priority while preserving existing data and promotes queued legacy cutoff events.
-Back up before upgrade; there is no downgrade migration. Historical implementation
+State schema 4 added the ledger and intent history; schema 5 added notification
+priority while preserving existing data and promoting queued legacy cutoff events.
+Current schema 6 adds per-destination delivery and recipient-binding records.
+Existing state is retained; switching legacy notification configuration to explicit
+targets cancels unbound legacy pending delivery rather than sending it to new
+recipients. Review [destination changes](notifications.md#changing-destinations-and-rotating-secrets)
+and back up before upgrade; there is no downgrade migration. Historical implementation
 and publication records describe their dated scope, not live proof of this feature.

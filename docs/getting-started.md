@@ -36,8 +36,11 @@ free -h
 PID 1 must be systemd; a non-systemd container or ordinary WSL session is
 insufficient. Ensure time synchronization and outbound DNS/HTTPS to
 `api.cloudflare.com` work under the host's policy. The application bypasses
-proxy environment variables and refuses redirects. Later notifications also
-need direct HTTPS to the approved receiver. Never disable certificate checking.
+proxy environment variables and refuses redirects. Later notifications need direct
+HTTPS to the selected Telegram/Slack/Discord/generic receiver, or outbound TLS SMTP
+to the chosen mail server and port (implicit TLS or STARTTLS submission). Follow
+the approved channel's settings; HTTPS-only egress is insufficient for SMTP.
+Never disable certificate checking.
 
 On a new Ubuntu host, missing prerequisite packages can be installed by its
 administrator **after approving host changes**:
@@ -65,7 +68,7 @@ credential. Do not embed tokens in clone URLs, commands or shell history.
 ```sh
 git clone https://github.com/callcthulu/cloudflare-cost-guard.git "$HOME/cloudflare-cost-guard-review"
 cd "$HOME/cloudflare-cost-guard-review"
-DELIVERY_COMMIT=2d530d674e330473208bc75169289af9467ceca0
+DELIVERY_COMMIT=cc1ea53f0e0b0fcf5c6d1936a78a0c599f915d85
 test "${#DELIVERY_COMMIT}" -eq 40 || exit 1
 git fetch origin "$DELIVERY_COMMIT" || exit 1
 git switch --detach "$DELIVERY_COMMIT" || exit 1

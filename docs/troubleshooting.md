@@ -124,14 +124,22 @@ host/network fix, not disabled TLS verification.
 
 ## Notifications and latches
 
-No receiver configured means incidents stay pending and runs exit 5. This is
-expected during first setup. `delivered` means HTTP 2xx accepted the generic JSON
-body; it does not prove human receipt or Slack/Discord format compatibility.
-The receiver must deduplicate `incident_id`. Check URL-file protection, direct
-HTTPS reachability, certificates, receiver contract and pending retry timing.
-No notification-test command exists; use an approved real queued incident and
-confirm actual receipt. `max_attempts` bounds due events per run, not lifetime
-retries. A future-due event still counts as pending.
+No destination configured means incidents stay pending and runs exit 5. This is
+expected during first setup. Email, Telegram, Slack, Discord and generic receivers
+have independent delivery/retry status. `delivered` means the adapter received its
+required provider/SMTP acceptance; it does not prove human receipt. A generic
+receiver must deduplicate `incident_id`. Check protected credential files,
+certificates, channel configuration, direct HTTPS or the selected TLS SMTP
+host/port, and pending retry timing. `max_attempts` bounds due destination
+deliveries globally per run, not lifetime retries. Future-due deliveries still
+count as pending.
+
+Use `test-notification` with the exact configured `--target` for a credential-free,
+configuration-only preview. Only with explicit approval for that recipient append
+`--send` to send one synthetic message and confirm actual receipt. The test never
+collects Cloudflare data or flushes queued incidents; do not use an enforce `run`
+as a notification test. See [notification setup](notifications.md#preview-and-explicit-synthetic-send)
+for the installed helper and protected source-config wrappers.
 
 A trip remains latched after healthier data or config changes. Verify the cause,
 then explicitly rearm the exact enrolled local resource/account as described in
