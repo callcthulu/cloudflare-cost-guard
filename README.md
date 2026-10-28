@@ -1,42 +1,32 @@
 # Cloudflare Cost Guard
 
-Self-hosted automatic budget cutoff for explicitly selected stateless Cloudflare
-Workers, with configurable budget warnings and read-only monitoring as the default.
-Runs on an existing Linux host with Python 3.11+, SQLite and a systemd timer.
-No runtime dependencies to install.
+Self-hosted Cloudflare usage and subscription monitoring, alerts, and optional
+cutoff for approved stateless Workers. Observe by default. Not a spending cap.
 
-See the [current solution audit](docs/solution-audit-2026-10-28.md) for the feature
-checklist, corrected setup guidance, test evidence and remaining live gates.
+For operators who want Cloudflare evidence and notifications on infrastructure
+they control. Runs on an existing Linux host with Python 3.11+, SQLite and systemd;
+there are no third-party runtime packages to install. Missing or stale data stays
+unknown. Account charges cannot identify which domain caused a cost.
 
-Once armed, the guard automatically deletes the approved Worker (`force=false`)
-or disables its workers.dev/preview flags when the selected USD signal reaches
-`hard_limit_usd`. Budget warnings are independent: configure any number of USD
-or percentage thresholds, or omit the hard limit for warning-only monitoring.
-See [budget alerts](docs/budget-alerts.md) for editable examples and safe updates.
-Send warnings and cutoff outcomes directly to email, Telegram, Slack or Discord,
-in any combination, with independent retries. See [notification setup](docs/notifications.md)
-and the [complete synthetic example](config.notifications.example.json).
-No approval is requested per cutoff incident. Deletion is destructive;
-endpoint disablement covers only those flags. Follow [automatic cutoff](docs/automatic-cutoff.md)
-for supported targets, one-time approval, independent restore source and arming.
+## Try it without credentials
 
-**An action trigger, not a guaranteed maximum bill.** Usage cost combines captured
-request counts with a configured CPU planning reserve; CPU is not measured. The
-alternative account-rated signal is a partial observed-charge floor. Missing data
-stays unknown, and collection/action delays can cause overshoot. Read the
-[capabilities](docs/capabilities.md) and guide's verification limits before use.
-
-## Get started
-
-Try the offline tests without credentials, root access or provider calls:
+The synthetic demo runs the real monitoring incident logic with temporary SQLite
+state and an in-memory message receiver. It makes no network requests, reads no
+credentials and does not install or start services. Python 3.11+ is sufficient:
 
 ```sh
 git clone https://github.com/callcthulu/cloudflare-cost-guard.git
 cd cloudflare-cost-guard
-python3 -B -m unittest discover -s tests -v
+python3 -B -m examples.monitoring_demo
 ```
 
-On Windows, use `python`. Service installation requires Linux with systemd.
+On Windows, use `python`. The demo shows a positive subscription fee, repeat-alert
+deduplication, missing evidence that cannot clear the fee incident, and recovery
+after fresh evidence returns. Its temporary state is removed when it finishes;
+the messages are simulated, not delivered email. Billing coverage remains an
+explicit limitation throughout. The demo does not exercise provider reads or cutoff.
+
+## Install and use
 
 Follow [getting started](docs/getting-started.md) to install a reviewed commit,
 create protected read-token files and obtain a first observe report. Installation
@@ -44,7 +34,11 @@ does not start the timer. Optional cutoff requires a separate explicit arming st
 the initial install remains read-only. For delegated setup, use the
 [agent deployment guide](docs/agent-deployment.md).
 
-## Use it
+Configure any number of USD or percentage [budget warnings](docs/budget-alerts.md),
+or omit the hard limit for warning-only monitoring. Guard notifications support
+email, Telegram, Slack and Discord in any combination, with independent retries.
+See [notification setup](docs/notifications.md) and the
+[synthetic example](config.notifications.example.json).
 
 The [getting-started guide](docs/getting-started.md#5-install-validate-and-probe)
 defines the installed `cfguard` shell helper. With that helper:
@@ -78,6 +72,38 @@ on another host: guard outages, delayed notifications, positive subscription fee
 and Worker/zone inventory drift. Use `python -B -m cfguard.monitoring`; the main
 installer does not configure or start these optional services. Offline tests do
 not prove live provider access, notification delivery or a maximum bill.
+
+## Optional Worker cutoff
+
+Explicit arming can authorize deletion of one approved stateless HTTP Worker
+(`force=false`), or disable only its workers.dev/preview flags, when a selected
+USD signal reaches `hard_limit_usd`. Deletion is destructive; endpoint disablement
+does not stop other invocation paths. Follow [automatic cutoff](docs/automatic-cutoff.md)
+for one-time approval, an independent restore source and arming. No approval is
+requested per incident after arming. No other product actions are supported.
+
+**The trigger is not a guaranteed maximum bill.** Usage estimates combine captured
+request counts with a configured CPU planning reserve; CPU is not measured. The
+alternative account-rated signal is a partial observed-charge floor. Collection
+and action delays can cause overshoot. Subscription fees, taxes and unsupported
+products are not bounded by an action. Check [capabilities](docs/capabilities.md)
+and Cloudflare's [native budget alerts](https://developers.cloudflare.com/billing/manage/budget-alerts/)
+alongside this tool; those alerts do not pause usage either.
+
+## Verification and release status
+
+This is early software. The [prepared prerelease notes](docs/releases/v0.1.0-alpha.1.md)
+describe scope, upgrade precautions and limits. Source tests are not a live cutoff
+canary or proof of a complete bill. Run the credential-free suite from the root:
+
+```sh
+python3 -B -m unittest discover -s tests -v
+git diff --check
+```
+
+The [solution audit](docs/solution-audit-2026-10-28.md) and
+[monitoring verification](docs/monitoring-verification.md) distinguish historical
+results from current code and remaining live gates.
 
 The [cutoff evidence](docs/automatic-cutoff-evidence.md) records regression tests,
 independent security review and disposable Linux lifecycle verification.
