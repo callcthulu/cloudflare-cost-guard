@@ -104,7 +104,7 @@ Once resolved, remove all action/writer/manifest fields before converting to a
 null hard limit, and convert any percentage warnings to USD. See
 [cutoff recovery](automatic-cutoff.md#result-and-recovery).
 
-Reviewed implementation including native notifications: `2d530d674e330473208bc75169289af9467ceca0`.
+Reviewed implementation including native notifications: `cc1ea53f0e0b0fcf5c6d1936a78a0c599f915d85`.
 Use [getting started](getting-started.md) or the [agent guide](agent-deployment.md)
 with that full pin. A moving branch is not a deployment pin.
 

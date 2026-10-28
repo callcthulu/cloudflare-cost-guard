@@ -6,7 +6,7 @@ Configure destinations before enabling the timer. This guide describes the nativ
 channel extension; older pinned installations need a reviewed upgrade first.
 Source tests do not establish live delivery or owner approval.
 See [verification evidence](native-notifications-evidence.md) for tested scope.
-Reviewed implementation: `2d530d674e330473208bc75169289af9467ceca0`.
+Reviewed implementation: `cc1ea53f0e0b0fcf5c6d1936a78a0c599f915d85`.
 Use [getting started](getting-started.md) or the [agent guide](agent-deployment.md)
 with this full source pin.
 

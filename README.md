@@ -5,6 +5,9 @@ Workers, with configurable budget warnings and read-only monitoring as the defau
 Runs on an existing Linux host with Python 3.11+, SQLite and a systemd timer.
 No runtime dependencies to install.
 
+See the [current solution audit](docs/solution-audit-2026-10-28.md) for the feature
+checklist, corrected setup guidance, test evidence and remaining live gates.
+
 Once armed, the guard automatically deletes the approved Worker (`force=false`)
 or disables its workers.dev/preview flags when the selected USD signal reaches
 `hard_limit_usd`. Budget warnings are independent: configure any number of USD
