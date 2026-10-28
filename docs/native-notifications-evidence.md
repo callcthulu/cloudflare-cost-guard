@@ -6,6 +6,10 @@ recipient/configuration digests; each destination has independent retry, accepta
 and cancellation state. See [setup](notifications.md) and the complete
 [synthetic observe configuration](../config.notifications.example.json).
 
+Reviewed implementation commit: `63ae782e95e3b8360541b0b539a4dc29e0c9384d`.
+Subsequent setup-pin/evidence documentation updates do not change the reviewed
+runtime, tests, installer or examples. This pin does not authorize a live send.
+
 ## Verification
 
 | Check | Actual result |
