@@ -87,10 +87,22 @@ Editing warnings alone preserves version 2 cutoff approval. Changing the hard
 limit, source, pricing/reserve, quality acceptance, currency or billing period
 requires a fresh matching approval. Do not clear state to apply an edit.
 
-To disarm, first use an observe source configuration through that procedure.
-Preserve the original config/manifests while unresolved attempts require read-only
-reconciliation; do not replace their semantics to force a retry. Once resolved,
-remove action/writer/manifest fields before converting to a null hard limit.
+To disarm, stop the timer, let any active service/direct CLI run finish, then stop
+the service and confirm both units are inactive. Preserve the original enforce
+config and manifests privately. In a separate observe source copy, remove every
+`executor_token_file` reference before using the ordinary managed installer: it
+rejects writer references even in observe mode. Retain the existing hard limit,
+action and approval semantics while any intent remains unresolved.
+
+Observe mode does not reconcile saved budget attempts. An `enforce-preview`
+inspection using the preserved enforce policy is read-only, but does not persist
+reconciliation. Run it only as the documented service identity with a protected,
+service-readable config; do not run the runtime as root against a root-only source
+file. Pending/uncertain attempts need separately owner-reviewed resolution or
+recovery; do not use an enforce `run` merely to inspect them or clear SQLite.
+Once resolved, remove all action/writer/manifest fields before converting to a
+null hard limit, and convert any percentage warnings to USD. See
+[cutoff recovery](automatic-cutoff.md#result-and-recovery).
 
 Reviewed implementation including native notifications: `2d530d674e330473208bc75169289af9467ceca0`.
 Use [getting started](getting-started.md) or the [agent guide](agent-deployment.md)
@@ -106,15 +118,16 @@ Crossing several new thresholds can queue several warnings in one run.
 A polling jump can cross warnings and the cutoff together. The cutoff does not
 wait for alert delivery; some warnings may arrive after the cutoff result.
 
-Notifications use a generic HTTPS JSON receiver. There is no native email or
-Slack sender; an approved receiver can translate the payload. Budget events carry
+Notifications support email, Telegram, Slack and Discord in any combination,
+alongside generic HTTPS JSON receivers. Budget events carry
 value, nullable hard limit, threshold, period, quality and sanitized `resource_ref`
 context. Critical confirmed/blocked/uncertain cutoff events use priority 100,
-warnings 10 and routine events 0. All due events share one delivery cap per run:
-`notification.max_attempts`, default 3 and maximum 10. Failed deliveries retry with
-backoff; higher-priority due events take precedence over routine backlog.
-HTTP acceptance is not proof a person received an alert. See
-[notification setup](runbook.md#notifications-and-scheduling).
+warnings 10 and routine events 0. `notification.max_attempts`, default 3 and maximum
+10, caps due destination deliveries globally per run. Each destination tracks
+success and retries independently. Failed deliveries retry with backoff;
+higher-priority due deliveries take precedence over routine backlog.
+Provider/SMTP acceptance is not proof a person received an alert. See
+[notification setup](notifications.md).
 
 Run reports include crossed thresholds in `budget_warnings`. A crossing produces
 warning exit code 4 when notifications have no failures or pending backlog; pending

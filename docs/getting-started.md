@@ -36,8 +36,11 @@ free -h
 PID 1 must be systemd; a non-systemd container or ordinary WSL session is
 insufficient. Ensure time synchronization and outbound DNS/HTTPS to
 `api.cloudflare.com` work under the host's policy. The application bypasses
-proxy environment variables and refuses redirects. Later notifications also
-need direct HTTPS to the approved receiver. Never disable certificate checking.
+proxy environment variables and refuses redirects. Later notifications need direct
+HTTPS to the selected Telegram/Slack/Discord/generic receiver, or outbound TLS SMTP
+to the chosen mail server and port (implicit TLS or STARTTLS submission). Follow
+the approved channel's settings; HTTPS-only egress is insufficient for SMTP.
+Never disable certificate checking.
 
 On a new Ubuntu host, missing prerequisite packages can be installed by its
 administrator **after approving host changes**:
