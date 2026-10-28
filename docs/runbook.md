@@ -3,8 +3,9 @@
 For first installation use [getting started](getting-started.md). Commands here
 use Bash on Linux. `sudo` marks administrator operations. Installed CLI commands
 run as `cloudflare-cost-guard` from `/opt/cloudflare-cost-guard`; running them as
-root can create incorrectly owned state. No command in this runbook authorizes a
-Cloudflare write or reopens a remote endpoint.
+root can create incorrectly owned state. This runbook does not grant provider-action approval. An explicitly armed
+`enforce` configuration can perform its approved action during `run`; see
+[automatic cutoff](automatic-cutoff.md) before arming it.
 
 Define this helper in your ordinary login-user Bash shell before CLI examples:
 
@@ -19,58 +20,50 @@ your login user to the service group or weaken directory permissions. Redefine
 the helper when opening a new shell.
 ## Notifications and scheduling
 
-Initial probe needs no notification receiver. Before scheduled operation, choose
-an existing **owner-approved generic HTTPS JSON receiver**. It must accept the
-application's incident payload, deduplicate `incident_id`, and return HTTP 2xx
-only after durable acceptance. Delivery is at least once after an uncertain
-network timeout; HTTP acceptance is not human receipt. There is no built-in
-Slack/Discord message adapter or notification testing CLI.
+Initial probe needs no notification destination. Before scheduling, configure
+owner-approved [native destinations](notifications.md): email, Telegram, Slack,
+Discord or generic JSON receivers, in any combination. Each destination has its
+own delivery status and retries. API/SMTP acceptance is separate from the owner
+confirming actual receipt; timeouts can produce duplicates.
 
-A representative incident body is:
+Use the [complete synthetic config](../config.notifications.example.json) as a
+schema example and keep credentials in protected external files. Edit the protected
+source JSON, never the hash-owned installed config. Follow
+[configuration updates](#configuration-updates-upgrades-and-token-rotation) below:
+stop scheduling, inspect pending deliveries, snapshot state, review `validate` and
+`show-policy`, then use the managed installer. Explicitly restart after validation.
+The [notification guide](notifications.md#changing-destinations-and-rotating-secrets)
+explains recipient binding and cancellation of old pending deliveries.
 
-```json
-{
-  "incident_id": "synthetic-incident:1",
-  "status": "unknown",
-  "reason_code": "rated_unknown",
-  "scope": "account",
-  "resource_ref": "synthetic-reference",
-  "metric": "rated_cost"
-}
-```
-
-Scheduler/action event fields differ. Do not require every event to have every
-field above. Alert payloads omit raw resource inventory. Treat receiver URLs as
-secrets: HTTPS only, no URL user/password, fragment or redirect. Store the URL
-in a root:cloudflare-cost-guard mode `0640` external file with protected parents,
-using the same secure-file approach as read tokens. For an already securely
-provisioned root-only input file:
+Preview one target before sending anything:
 
 ```sh
-sudo install -o root -g cloudflare-cost-guard -m 0640 \
-  /root/secure-import/notification.url \
-  /etc/cloudflare-cost-guard/secrets/notification.url
+cfguard test-notification --config /etc/cloudflare-cost-guard/config.json --target ops-slack
 ```
 
-Add `notification` to `/root/cfguard-config.json` using the
-[configuration fragment](configuration.md#files-notifications-and-enforcement-fields),
-then reinstall through the update procedure below. Never edit installed
-`/etc/cloudflare-cost-guard/config.json` directly: it is hash tracked.
-`max_attempts` is the maximum due events attempted **per run**, not a lifetime
-retry count. Failed events retry on future runs with bounded backoff. An unset
-receiver leaves incidents pending; the run exits 5 while any remain pending.
+With explicit authorization for the selected destination, append `--send` to
+send one synthetic message only. Repeat separately for each configured target and
+have its owner confirm receipt. This command makes no Cloudflare calls, opens no
+incident queue and never flushes backlog. Use the root-trusted source wrapper in
+the notification guide to inspect root-only source configuration before installation.
 
-Run one observe cycle after explicit receiver/notification approval and confirm
-that the intended recipient actually received its incident. Previously queued
-unknown/warning events can provide this verification; do not provoke a paid
-charge or alter a live Worker as an alert test. Inspect pending count, the run's
-`notification` object and collection health separately.
+Budget messages carry value, nullable hard limit, threshold, UTC guard period,
+source quality and sanitized `resource_ref` context. Confirmed/blocked/uncertain
+cutoff outcomes take priority over warnings and routine events among due deliveries;
+backoff is still honored. `max_attempts` defaults to 3 (maximum 10) destination
+deliveries across the entire run, not a separate quota for each target or event.
+A failed destination does not erase another destination's success. Missing
+credentials leave the affected delivery pending for later retry.
+
+After approved installation, inspect collection and delivery separately:
 
 ```sh
 cfguard run --config /etc/cloudflare-cost-guard/config.json
 printf 'run exit: %s\n' "$?"
 cfguard status --config /etc/cloudflare-cost-guard/config.json
 ```
+
+An armed enforce run can execute a real cutoff; never use it as a notification test.
 
 Have the owner approve an independently hosted check in an existing monitoring
 system. It should detect absent runs, old `last_finished`, old
@@ -106,13 +99,21 @@ the timer continues scheduling. See [troubleshooting](troubleshooting.md).
 
 ## Configuration updates, upgrades and token rotation
 
+For optional Worker cutoff, follow [the arming procedure](automatic-cutoff.md#arm-and-preview).
+Initial installation accepts observe only; `install --allow-enforce` is an explicit
+exception for an existing managed installation with timer/service inactive. The
+ordinary update commands below retain observe mode. Keep automatic restore and
+re-enable outside the guard.
+
 The [compatibility delivery](compatibility-delivery.md) corrects zone subscription
 collection and cross-endpoint commitment identity, and adds explicit V1 billing
 coverage. Review and pin its new delivery commit before upgrading; historical
 implementation pins predate these fixes. No new token permissions, purchases or
 configuration fields are required. Preserve existing state and latches; there is
-no state migration or reason to clear SQLite. An old hourly billing cache stays
-unverified until the next fetch. Subscription inventory is recollected each run.
+no reason to clear SQLite for that compatibility update. The later automatic-cutoff
+upgrade adds schema 4 ledger/history tables while preserving earlier data; back up
+before upgrading and do not downgrade without a reviewed migration. An old hourly
+billing cache stays unverified until the next fetch. Subscription inventory is recollected each run.
 After an independently authorized upgrade/probe, inspect
 `coverage.billing_account_coverage`, `coverage.billing_info`, `coverage.billing_period`
 and each account/configured-zone subscription coverage separately. A
@@ -147,11 +148,20 @@ before proceeding; keep the timer stopped until every check succeeds.
 CFGUARD_SOURCE=/root/REPLACE_WITH_REVIEWED_PINNED_SOURCE_DIRECTORY
 sudo test -f "$CFGUARD_SOURCE/deploy/install.py" || exit 1
 sudoedit /root/cfguard-config.json
+sudo sh -c 'cd "$1" && exec /usr/bin/python3 -B -m cfguard validate --config /root/cfguard-config.json' cfguard-config "$CFGUARD_SOURCE"
+sudo sh -c 'cd "$1" && exec /usr/bin/python3 -B -m cfguard show-policy --config /root/cfguard-config.json' cfguard-config "$CFGUARD_SOURCE"
 sudo sh -c 'umask 022; exec /usr/bin/python3 -B "$1/deploy/install.py" install --config /root/cfguard-config.json' cfguard-install "$CFGUARD_SOURCE"
 sudo systemd-analyze verify /etc/systemd/system/cloudflare-cost-guard.service /etc/systemd/system/cloudflare-cost-guard.timer
 cfguard validate --config /etc/cloudflare-cost-guard/config.json
 cfguard probe --config /etc/cloudflare-cost-guard/config.json
 ```
+
+For warning/hard-limit edits, see [budget alerts](budget-alerts.md). Review
+`show-policy` before reinstalling: it uses configuration only, without state, token
+reads or provider calls. A threshold newly crossed by existing evidence may notify
+on the next run. Warning-only resources require no action/writer/manifest fields.
+For armed updates follow the separate `--allow-enforce` procedure; changing
+cutoff/source/pricing/quality/period semantics requires a new matching approval.
 
 The wrapper scopes `umask 022` to installer directory creation; it does not relax
 explicit secret/config/state modes or repair pre-existing directory permissions.
@@ -187,8 +197,12 @@ cfguard rearm --config /etc/cloudflare-cost-guard/config.json --account-id ACCOU
 
 For an existing account billing latch, use `--scope account --account-id ACCOUNT_ID
 --product billing` with the same command/config. Rearm changes local state only;
-it never re-enables endpoints. Pending/partial/verified cutoff evidence prevents
-rearm; preserve it and follow [enforcement recovery](enforcement.md).
+it never re-enables endpoints or recreates scripts. For budget cutoff, known
+terminal `worker_deleted`, `endpoints_disabled` and `not_applied` attempts are
+archived; all usage and audit data remain. Pending/uncertain attempts block rearm.
+A same-period budget still above threshold can trigger another armed attempt after
+rearm. Legacy partial/verified-public-cutoff evidence retains its restriction.
+Preserve evidence and follow [cutoff recovery](automatic-cutoff.md#result-and-recovery).
 
 Reports use stable hashed `resource_ref` values. `status --show-identities`
 explicitly adds a private mapping to provider IDs. Use it only locally with the

@@ -153,7 +153,9 @@ def evaluate(config, snapshot, prior):
                 if reason == "approximate": status = "warning"
                 elif crossed:
                     status, reason = "tripped", "threshold_crossed"
-                    action = resource.permitted_action
+                    # Budget-enrolled resources act only on their monetary policy,
+                    # never through the independent legacy raw-usage threshold.
+                    action = resource.permitted_action if resource.budget is None else None
                 elif threshold.warning is not None and observation.value >= threshold.warning:
                     status, reason = "warning", "warning_threshold"
                 else: status, reason = "healthy", "below_threshold"

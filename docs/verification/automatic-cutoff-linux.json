@@ -1,0 +1,55 @@
+{
+  "date": "2026-10-27",
+  "branch": "codex/automatic-cutoff-2026-10-27",
+  "platform": {
+    "distribution": "Ubuntu 24.04 WSL2 disposable",
+    "python": "3.12.3",
+    "systemd": "255.4-1ubuntu8"
+  },
+  "source_files": 33,
+  "review_manifest_sha256": "f540c9c86584a4ce6c4e8be5bb1f9e5bfe8b3466e62047bb91a34f3bf0b70c87",
+  "linux_manifest_sha256": "c7916ce5de5f7bdb97286666f4a59dd72ac40f61e6463a1ec2961713b1d92c29",
+  "unit_tests": {
+    "count": 170,
+    "skips": 0,
+    "seconds": "9.551",
+    "exit": 0,
+    "unprivileged": true,
+    "external_network_isolated": true
+  },
+  "lifecycle": {
+    "install_twice": "passed",
+    "unit_verify": "passed without diagnostics",
+    "overlap": {
+      "exit": 3,
+      "collector_calls": 1
+    },
+    "running_memory": [
+      "VmHWM:\t   27220 kB",
+      "VmRSS:\t   27220 kB"
+    ],
+    "scheduled_runs": 2,
+    "resource_accounting": [
+      "Result=exit-code",
+      "MemoryPeak=[not set]",
+      "CPUUsageNSec=161710000"
+    ],
+    "restart_latch": "persisted across scheduled processes",
+    "secret_restriction_and_logs": "nobody denied; fake token absent from journal",
+    "uninstall": "units/code removed; exact DB, secrets, unrelated backup preserved"
+  },
+  "installer_arming": {
+    "default_refuses_enforce_without_changes": true,
+    "allow_enforce_installs_with_both_units_inactive": true,
+    "installed_service_identity_validate": true,
+    "installed_service_identity_approval_validation": true,
+    "no_additional_scheduled_or_cli_run": true,
+    "uninstall_preserves_db_synthetic_secrets_and_backup": true
+  },
+  "posttest_source_matches_review_manifest": true,
+  "fixture_removed": true,
+  "final_wsl_inventory_empty": true,
+  "provider_live_calls": false,
+  "real_credentials": false,
+  "source_edits": false
+}

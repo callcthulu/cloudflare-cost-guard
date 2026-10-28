@@ -183,7 +183,21 @@ def write_owned(path, data, marker, mode=0o644):
     marker['files'][relative] = hashlib.sha256(data).hexdigest()
 
 
-def install(config_path):
+def assert_units_inactive():
+    """Read-only arming gate; never stop a running unit on the operator's behalf."""
+    for suffix in ('service', 'timer'):
+        try:
+            result = subprocess.run(['systemctl', 'show', f'{NAME}.{suffix}',
+                                     '--property=LoadState', '--property=ActiveState'],
+                                    capture_output=True, text=True, timeout=10)
+        except (OSError, subprocess.TimeoutExpired):
+            raise InstallError('cannot establish managed unit state') from None
+        states = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+        if result.returncode or states.get('LoadState') != 'loaded' or states.get('ActiveState') != 'inactive':
+            raise InstallError('enforcement installation requires both managed units loaded and inactive')
+
+
+def install(config_path, *, allow_enforce=False):
     marker = load_marker()
     verify_identity(marker)
     verify_files('/', marker['files'])
@@ -200,15 +214,30 @@ def install(config_path):
     for suffix in ('service', 'timer'):
         safe_path(source / 'deploy' / f'{NAME}.{suffix}')
     sys.path.insert(0, str(source))
-    from cfguard.config import load_config
+    from cfguard.config import load_config, notification_secret_files
     config = load_config(config_path)
-    if config.mode != 'observe' or any(r.executor_token_file is not None for r in config.resources):
+    if allow_enforce:
+        required = {path.relative_to('/').as_posix() for path in (
+            CODE / 'cfguard' / '__main__.py', ETC / 'config.json',
+            UNITS / f'{NAME}.service', UNITS / f'{NAME}.timer')}
+        if not required <= marker['files'].keys():
+            raise InstallError('enforcement requires an existing complete managed installation')
+        cutoff_resources = [r for r in config.resources if r.budget is not None
+                            and r.budget.hard_limit_usd is not None]
+        if (config.mode != 'enforce' or not cutoff_resources
+                or any(resource.budget is None for resource in config.resources)
+                or any(resource.permitted_action not in {'delete_worker', 'disable_worker_endpoints'}
+                       for resource in cutoff_resources)):
+            raise InstallError('enforcement installation requires explicit supported budget guards')
+    elif config.mode != 'observe' or any(r.executor_token_file is not None for r in config.resources):
         raise InstallError('initial installer requires observe mode without executor credentials')
     if config.state_dir != STATE:
         raise InstallError('state_dir must match protected service state directory')
     secrets = [account.read_token_file for account in config.accounts]
-    if config.notification:
-        secrets.append(config.notification['url_file'])
+    secrets.extend(notification_secret_files(config.notification))
+    if allow_enforce:
+        for resource in cutoff_resources:
+            secrets.extend((resource.executor_token_file, resource.approved_manifest_file))
     for secret in secrets:
         safe_path(secret)
         info = secret.stat()
@@ -226,11 +255,13 @@ def install(config_path):
             raise InstallError('foreign deployment target exists')
     for original in sources:
         safe_path(original)
+    if allow_enforce:
+        assert_units_inactive()
     for destination, data, mode in payloads:
         write_owned(destination, data, marker, mode)
     save_marker(marker)
     command('systemctl', 'daemon-reload')
-    print('Installed in observe mode. Timer remains under administrator control.')
+    print(f'Installed in {config.mode} mode. Timer remains under administrator control.')
 
 
 def uninstall():
@@ -253,17 +284,21 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('operation', choices=('prepare', 'install', 'uninstall'))
     parser.add_argument('--config', type=Path)
+    parser.add_argument('--allow-enforce', action='store_true',
+                        help='explicitly install budget enforcement on an existing stopped managed installation')
     args = parser.parse_args()
     if sys.platform != 'linux' or os.geteuid() != 0:
         parser.error('Linux root is required')
     if args.operation == 'install' and args.config is None:
         parser.error('install requires --config')
+    if args.allow_enforce and args.operation != 'install':
+        parser.error('--allow-enforce applies only to install')
     try:
         if args.operation == 'prepare':
             prepare()
             print('Prepared protected directories and dedicated identity; provision secret files before install.')
         elif args.operation == 'install':
-            install(args.config)
+            install(args.config, allow_enforce=args.allow_enforce)
         else:
             uninstall()
     except (InstallError, OSError, subprocess.CalledProcessError, ValueError):

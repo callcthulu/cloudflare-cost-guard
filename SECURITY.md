@@ -25,5 +25,7 @@ removing a report does not revoke them.
 Read the [threat model](docs/threat-model.md), [capabilities](docs/capabilities.md)
 and [recorded evidence](docs/evidence.md). No third-party security audit or
 production safety certification is claimed. This utility is not a spending cap;
-real enforcement remains unavailable. Source publication does not authorize actions
-on a user's infrastructure.
+automatic cutoff requires explicit arming and may destructively delete an approved
+stateless Worker. Read [its scope and approval controls](docs/automatic-cutoff.md).
+No live cutoff canary is claimed. Source publication does not authorize actions on
+a user's infrastructure.
