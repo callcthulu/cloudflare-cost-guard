@@ -30,6 +30,12 @@ mutation, publication or messaging permission. Honor the operator's current scop
   use the same qualified signal and deduplicate by resource/source/period/threshold.
   Warning edits preserve cutoff approval; cutoff policy edits do not. Prioritize
   due cutoff outcomes over warnings and routine events without bypassing backoff.
+- Native notification targets snapshot recipient/configuration digests per event.
+  Track success/retry/cancellation independently; never redirect historical alerts
+  to new recipients. Secrets stay in protected external files, SMTP requires
+  verified TLS, and Telegram uses numeric chat IDs. `test-notification` defaults
+  to a credential-free preview; `--send` targets one synthetic message and never
+  collects Cloudflare data or flushes the incident queue.
 - Unknown is not zero or healthy. Keep estimates, rated charges and subscription
   commitments separate. Use Decimal strings, UTC provider windows, explicit scope,
   known units and source quality. Account totals and breakdowns are not additive.

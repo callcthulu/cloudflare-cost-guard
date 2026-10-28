@@ -10,6 +10,9 @@ or disables its workers.dev/preview flags when the selected USD signal reaches
 `hard_limit_usd`. Budget warnings are independent: configure any number of USD
 or percentage thresholds, or omit the hard limit for warning-only monitoring.
 See [budget alerts](docs/budget-alerts.md) for editable examples and safe updates.
+Send warnings and cutoff outcomes directly to email, Telegram, Slack or Discord,
+in any combination, with independent retries. See [notification setup](docs/notifications.md)
+and the [complete synthetic example](config.notifications.example.json).
 No approval is requested per cutoff incident. Deletion is destructive;
 endpoint disablement covers only those flags. Follow [automatic cutoff](docs/automatic-cutoff.md)
 for supported targets, one-time approval, independent restore source and arming.
@@ -48,12 +51,15 @@ cfguard show-policy --config /etc/cloudflare-cost-guard/config.json
 cfguard probe --config /etc/cloudflare-cost-guard/config.json
 cfguard run --config /etc/cloudflare-cost-guard/config.json
 cfguard status --config /etc/cloudflare-cost-guard/config.json
+cfguard test-notification --config /etc/cloudflare-cost-guard/config.json --target ops-slack
 ```
 
 `show-policy` displays sanitized current policies without provider calls, token
 reads or opening state. `probe` collects read-only evidence without sending alerts;
 `run` evaluates policy and delivers queued alerts; `status` reads local execution
-state and displays current policies. Unknown or warning results
+state and displays current policies. `test-notification` previews one synthetic
+message using configuration only; explicit `--send` sends it to the selected target.
+It never collects Cloudflare data or flushes queued incidents. Unknown or warning results
 need attention. With no notification receiver, pending alerts can produce exit 5;
 that does not establish collection health or alert receipt. See
 [configuration](docs/configuration.md), [operations](docs/runbook.md) and
@@ -71,6 +77,8 @@ The [cutoff evidence](docs/automatic-cutoff-evidence.md) records regression test
 independent security review and disposable Linux lifecycle verification.
 The [budget-alert evidence](docs/budget-alerts-evidence.md) covers multiple warnings,
 optional cutoff, priority delivery and policy inspection.
+The [native notification evidence](docs/native-notifications-evidence.md) covers
+channel adapters, independent delivery tracking and installed preview isolation.
 
 ## Contribute
 

@@ -39,3 +39,13 @@ restricted to the enrolled script. An independent restore source is required;
 there is no automatic backup. Endpoint flag disabling covers only workers.dev and
 preview. See [automatic cutoff](automatic-cutoff.md) for the full supported subset
 and [current evidence](automatic-cutoff-evidence.md) for what was tested.
+
+Notification destinations are separate approved disclosure boundaries. Per-event
+recipient/configuration digests prevent pending messages being redirected by
+configuration changes; new targets do not receive history. Numeric Telegram IDs
+avoid mutable username destinations. Removed or changed routes preserve cancelled
+delivery evidence. Email uses verified TLS, with no plaintext fallback; native
+HTTPS clients refuse redirects and environment proxies. Alert text uses sanitized
+fields and suppresses mentions. Provider acceptance does not prove human receipt,
+and ambiguous timeouts can cause duplicate messages. A compromised service identity
+can read its notification credentials; these controls do not contain host compromise.

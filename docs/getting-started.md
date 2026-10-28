@@ -244,9 +244,9 @@ successfully reads local state; it is not a provider health check.
 ## 6. Complete operational acceptance before scheduling
 
 Follow [notifications and scheduling](runbook.md#notifications-and-scheduling) to
-approve a generic HTTPS receiver, securely provision its URL, reinstall the
-updated source config and confirm actual receipt. Native Slack/Discord webhook
-compatibility is not implemented. Set up an independently hosted heartbeat using
+approve [native destinations or a generic HTTPS receiver](notifications.md),
+securely provision its protected files, reinstall the updated source config and
+confirm actual receipt with an explicitly selected synthetic test. Set up an independently hosted heartbeat using
 your existing approved monitoring tool; this utility cannot alert while its host
 is down. Do not enable a timer merely because validation passed.
 

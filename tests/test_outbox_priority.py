@@ -107,7 +107,7 @@ class OutboxPriorityTests(unittest.TestCase):
                 ))
                 before = list(db.execute('SELECT * FROM outbox ORDER BY id'))
             with Store(root) as store:
-                self.assertEqual(store.get_meta('schema_version'), '5')
+                self.assertEqual(store.get_meta('schema_version'), '6')
                 self.assertEqual(store.get_meta('operator'), 'preserved')
                 after = list(store.db.execute('SELECT id,payload,attempts,next_at,delivered FROM outbox ORDER BY id'))
                 self.assertEqual([tuple(row) for row in after], before)
@@ -143,7 +143,7 @@ class OutboxPriorityTests(unittest.TestCase):
     def test_legacy_backups_restore_and_upgrade_and_future_schema_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for version in ('1', '2', '3', '4', '6'):
+            for version in ('1', '2', '3', '4', '5', '7'):
                 with self.subTest(version=version):
                     source = root / f'backup-{version}.sqlite3'
                     with closing(sqlite3.connect(source)) as db, db:
@@ -157,7 +157,7 @@ class OutboxPriorityTests(unittest.TestCase):
                         db.execute('INSERT INTO outbox VALUES (?,?,?,?,?)',
                                    ('legacy', '{}', 2, NOW.isoformat(), 0))
                     restored = root / f'restored-{version}'
-                    if version == '6':
+                    if version == '7':
                         with self.assertRaises(ValueError):
                             Store.restore(source, restored)
                         direct = root / 'future'

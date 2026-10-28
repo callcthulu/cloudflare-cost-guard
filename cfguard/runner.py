@@ -70,7 +70,14 @@ def policy_report(config):
                                        'percent': str(w.percent) if w.percent is not None else None,
                                        'threshold_usd': str(warning_threshold_usd(budget, w))}
                                       for w in budget.warnings]})
-    return {'mode': config.mode, 'approval_checked': False, 'policies': policies}
+    notification = config.notification
+    target_specs = (notification['targets'] if notification and 'targets' in notification else
+                    ({'id': 'legacy-webhook', 'type': 'webhook'},) if notification else ())
+    return {'mode': config.mode, 'approval_checked': False, 'policies': policies,
+            'notification': {'configured': bool(notification),
+                             'max_attempts': notification.get('max_attempts', 3) if notification else 0,
+                             'targets': [{'target_ref': hashlib.sha256(target['id'].encode()).hexdigest()[:16],
+                                          'type': target['type']} for target in target_specs]}}
 
 
 def cutoff_notification(resource, result, decision=None):
@@ -150,6 +157,9 @@ def run_once(config, *, now=None, client_factory=None, probe=False, preview=Fals
     conditions = set()
     with RunLock(config.state_dir), Store(config.state_dir) as store:
         with time_budget(config.run_timeout_seconds):
+            if not probe and not preview:
+                from .notify import prepare_notifications
+                prepare_notifications(store, config.notification, now)
             last_attempt = store.get_meta('last_attempt')
             if last_attempt:
                 gap = (now - datetime.fromisoformat(last_attempt)).total_seconds()
@@ -286,7 +296,8 @@ def run_once(config, *, now=None, client_factory=None, probe=False, preview=Fals
                                               {'reason_code': 'cutoff_blocked'}, now, priority=100)
             if not probe and not preview:
                 report['notification'] = deliver(store, config.notification, now)
-                if report['notification']['failed'] or report['notification']['pending']:
+                if (report['notification']['failed'] or report['notification']['pending']
+                        or report['notification'].get('cancelled', 0)):
                     conditions.add(5)
                 store.set_meta('last_finished', now.isoformat())
                 store.set_meta('last_collection_healthy', str(3 not in conditions).lower())
@@ -328,7 +339,7 @@ def _prepare_cutoff(config, args):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description='Cloudflare budget guard with explicitly armed Worker cutoffs; not a guaranteed bill cap.')
-    parser.add_argument('command', choices=('validate', 'show-policy', 'probe', 'run', 'status', 'rearm', 'enforce-preview', 'prepare-cutoff'))
+    parser.add_argument('command', choices=('validate', 'show-policy', 'probe', 'run', 'status', 'rearm', 'enforce-preview', 'prepare-cutoff', 'test-notification'))
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--account-id')
     parser.add_argument('--product', default='workers')
@@ -337,6 +348,8 @@ def main(argv=None):
     parser.add_argument('--output', type=Path, help='prepare-cutoff only: new approval template outside source')
     parser.add_argument('--show-identities', action='store_true',
                         help='status only: include private local resource mapping; do not share output')
+    parser.add_argument('--target', help='test-notification only: exact configured target ID')
+    parser.add_argument('--send', action='store_true', help='test-notification only: send one synthetic notification')
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config)
@@ -344,11 +357,23 @@ def main(argv=None):
             raise ConfigError('private mapping is a status-only option')
         if args.output is not None and args.command != 'prepare-cutoff':
             raise ConfigError('output is a prepare-cutoff-only option')
+        if (args.target is not None or args.send) and args.command != 'test-notification':
+            raise ConfigError('notification test flags require test-notification')
         if args.command == 'validate':
             report, code = {'valid': True, 'mode': config.mode, 'accounts': len(config.accounts),
                             'resources': len(config.resources)}, 0
         elif args.command == 'show-policy':
             report, code = policy_report(config), 0
+        elif args.command == 'test-notification':
+            if args.target is None:
+                raise ConfigError('notification test requires an exact target')
+            from .notify import test_notification
+            try:
+                with time_budget(min(config.run_timeout_seconds, 60)):
+                    report = test_notification(config.notification, args.target, send=args.send)
+            except ValueError:
+                raise ConfigError('notification target is not configured') from None
+            code = 0 if report.get('preview') or report.get('accepted') else 5
         elif args.command in ('run', 'probe', 'enforce-preview'):
             code, report = run_once(config, probe=args.command == 'probe', preview=args.command == 'enforce-preview')
         elif args.command == 'prepare-cutoff':
@@ -374,6 +399,7 @@ def main(argv=None):
                               'last_collection_success': store.get_meta('last_collection_success'),
                               'last_collection_healthy': store.get_meta('last_collection_healthy'),
                               'pending_notifications': store.pending_count(),
+                              'notification_delivery': store.delivery_summary(),
                               'tripped': sum(s.status == 'tripped' for s in states),
                               'policies': policy_report(config)['policies'],
                               'resources': [{'resource_ref': resource_label(key), 'status': state.status,

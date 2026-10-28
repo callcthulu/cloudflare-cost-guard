@@ -84,6 +84,8 @@ class DeploymentTests(unittest.TestCase):
         installer = self.installer
         read, write, approval = (self.root / name for name in ('read.token', 'write.token', 'approval.json'))
         for path in (read, write, approval): path.write_text('synthetic fixture', encoding='utf-8')
+        notification_files={name:self.root/name for name in ('slack.url','discord.url','bot.token','chat.id','smtp.json')}
+        for path in notification_files.values():path.write_text('synthetic fixture',encoding='utf-8')
         raw = {'mode': mode, 'state_dir': installer.STATE.as_posix(),
                'accounts': [{'key': 'fixture', 'account_id': 'a'*32, 'read_token_file': str(read),
                              'billing_day': 1, 'budget': '0', 'currency': 'USD'}], 'resources': []}
@@ -101,7 +103,7 @@ class DeploymentTests(unittest.TestCase):
         mutations, checks, commands = {}, [], []
         real_stat = type(read).stat
         def synthetic_stat(path, *args, **kwargs):
-            if path in (read, write, approval):
+            if path in (read, write, approval, *notification_files.values()):
                 return SimpleNamespace(st_mode=stat.S_IFREG | 0o640, st_gid=456)
             return real_stat(path, *args, **kwargs)
         def run(args, **kwargs):
@@ -110,7 +112,8 @@ class DeploymentTests(unittest.TestCase):
                 state = unit_state.get(args[2], 'inactive') if isinstance(unit_state, dict) else unit_state
                 return SimpleNamespace(returncode=0, stdout='LoadState=loaded\nActiveState='+state+'\n')
             if args[:2] == ['runuser', '-u']:
-                return SimpleNamespace(returncode=int(unreadable is not None and args[-1] == str({'write': write, 'approval': approval}[unreadable])))
+                private_files={'write':write,'approval':approval,**notification_files}
+                return SimpleNamespace(returncode=int(unreadable is not None and args[-1] == str(private_files[unreadable])))
             raise AssertionError('unexpected privileged command')
         def write_owned(path, data, marker, permissions): mutations[str(path)] = data
         with contextlib.ExitStack() as stack:
@@ -123,7 +126,27 @@ class DeploymentTests(unittest.TestCase):
             stack.enter_context(patch.object(type(read), 'stat', synthetic_stat))
             stack.enter_context(patch.object(installer.subprocess, 'run', run))
             yield SimpleNamespace(config=config_path, raw=raw, marker=marker, mutations=mutations,
-                                  checks=checks, commands=commands, write=write, approval=approval)
+                                  checks=checks, commands=commands, write=write, approval=approval,
+                                  notification_files=notification_files)
+
+    def test_all_native_notification_files_are_protected_and_service_readable_before_install(self):
+        for unreadable in (None,'slack.url','discord.url','bot.token','chat.id','smtp.json'):
+            with self.subTest(unreadable=unreadable), self.installation(unreadable=unreadable) as fixture:
+                files=fixture.notification_files
+                fixture.raw['notification']={'targets':[
+                    {'id':'slack','type':'slack','url_file':str(files['slack.url'])},
+                    {'id':'discord','type':'discord','url_file':str(files['discord.url'])},
+                    {'id':'telegram','type':'telegram','token_file':str(files['bot.token']),'chat_id_file':str(files['chat.id'])},
+                    {'id':'email','type':'email','settings_file':str(files['smtp.json'])}]}
+                fixture.config.write_text(json.dumps(fixture.raw),encoding='utf-8')
+                if unreadable:
+                    with self.assertRaises(self.installer.InstallError):
+                        self.installer.install(fixture.config,allow_enforce=True)
+                    self.assertEqual(fixture.mutations,{})
+                else:
+                    self.installer.install(fixture.config,allow_enforce=True)
+                    readable={args[-1] for args in fixture.checks if args[0]=='runuser'}
+                    self.assertTrue({str(path) for path in files.values()} <= readable)
 
     def test_explicit_enforce_upgrade_installs_valid_guard_checks_both_units_and_all_private_refs(self):
         with self.installation() as fixture:
