@@ -92,9 +92,9 @@ Preserve the original config/manifests while unresolved attempts require read-on
 reconciliation; do not replace their semantics to force a retry. Once resolved,
 remove action/writer/manifest fields before converting to a null hard limit.
 
-The earlier cutoff delivery pin `9c6e16b817e0f3541c8fceb986342dd83d6535f3`
-lacks this extension. Use its final reviewed extension commit once recorded in
-[agent deployment](agent-deployment.md); a moving branch is not a deployment pin.
+Reviewed implementation: `ba00e2a1d6790654219a3d141015de2b2580daf8`.
+Use [getting started](getting-started.md) or the [agent guide](agent-deployment.md)
+with that full pin. A moving branch is not a deployment pin.
 
 ## Notification behavior
 
