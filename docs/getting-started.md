@@ -65,7 +65,7 @@ credential. Do not embed tokens in clone URLs, commands or shell history.
 ```sh
 git clone https://github.com/callcthulu/cloudflare-cost-guard.git "$HOME/cloudflare-cost-guard-review"
 cd "$HOME/cloudflare-cost-guard-review"
-DELIVERY_COMMIT=63ae782e95e3b8360541b0b539a4dc29e0c9384d
+DELIVERY_COMMIT=2d530d674e330473208bc75169289af9467ceca0
 test "${#DELIVERY_COMMIT}" -eq 40 || exit 1
 git fetch origin "$DELIVERY_COMMIT" || exit 1
 git switch --detach "$DELIVERY_COMMIT" || exit 1

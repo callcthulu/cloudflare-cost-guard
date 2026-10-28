@@ -92,7 +92,7 @@ Preserve the original config/manifests while unresolved attempts require read-on
 reconciliation; do not replace their semantics to force a retry. Once resolved,
 remove action/writer/manifest fields before converting to a null hard limit.
 
-Reviewed implementation including native notifications: `63ae782e95e3b8360541b0b539a4dc29e0c9384d`.
+Reviewed implementation including native notifications: `2d530d674e330473208bc75169289af9467ceca0`.
 Use [getting started](getting-started.md) or the [agent guide](agent-deployment.md)
 with that full pin. A moving branch is not a deployment pin.
 
