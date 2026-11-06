@@ -232,3 +232,4 @@ class Config:
     notification: Mapping[str, object] | None = None
     run_timeout_seconds: int = 240
     heartbeat_max_age_seconds: int = 660
+    healthchecks_ping_url_file: Path | None = None

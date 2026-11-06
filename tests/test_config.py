@@ -40,6 +40,15 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.accounts[0].prices[0].amount, Decimal("0.30"))
         self.assertEqual(len(config.resources), 1)
 
+    def test_healthchecks_requires_a_file_reference(self):
+        data = example()
+        self.assertIsNone(self.load(data).healthchecks_ping_url_file)
+        data["healthchecks_ping_url_file"] = "/etc/cfguard/healthchecks.url"
+        self.assertEqual(self.load(data).healthchecks_ping_url_file, Path("/etc/cfguard/healthchecks.url"))
+        for invalid in ("https://hc-ping.com/example", "healthchecks.url", False):
+            with self.subTest(invalid=invalid), self.assertRaises(ConfigError):
+                self.load(dict(data, healthchecks_ping_url_file=invalid))
+
     def test_reject_invalid_identity_threshold_and_secrets(self):
         base = example()
         variants = []

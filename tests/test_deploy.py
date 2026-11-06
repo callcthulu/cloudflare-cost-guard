@@ -85,7 +85,9 @@ class DeploymentTests(unittest.TestCase):
         read, write, approval = (self.root / name for name in ('read.token', 'write.token', 'approval.json'))
         for path in (read, write, approval): path.write_text('synthetic fixture', encoding='utf-8')
         notification_files={name:self.root/name for name in ('slack.url','discord.url','bot.token','chat.id','smtp.json')}
-        for path in notification_files.values():path.write_text('synthetic fixture',encoding='utf-8')
+        heartbeat_file = self.root / 'healthchecks.url'
+        for path in (*notification_files.values(), heartbeat_file):
+            path.write_text('synthetic fixture', encoding='utf-8')
         raw = {'mode': mode, 'state_dir': installer.STATE.as_posix(),
                'accounts': [{'key': 'fixture', 'account_id': 'a'*32, 'read_token_file': str(read),
                              'billing_day': 1, 'budget': '0', 'currency': 'USD'}], 'resources': []}
@@ -103,7 +105,7 @@ class DeploymentTests(unittest.TestCase):
         mutations, checks, commands = {}, [], []
         real_stat = type(read).stat
         def synthetic_stat(path, *args, **kwargs):
-            if path in (read, write, approval, *notification_files.values()):
+            if path in (read, write, approval, heartbeat_file, *notification_files.values()):
                 return SimpleNamespace(st_mode=stat.S_IFREG | 0o640, st_gid=456)
             return real_stat(path, *args, **kwargs)
         def run(args, **kwargs):
@@ -112,7 +114,7 @@ class DeploymentTests(unittest.TestCase):
                 state = unit_state.get(args[2], 'inactive') if isinstance(unit_state, dict) else unit_state
                 return SimpleNamespace(returncode=0, stdout='LoadState=loaded\nActiveState='+state+'\n')
             if args[:2] == ['runuser', '-u']:
-                private_files={'write':write,'approval':approval,**notification_files}
+                private_files={'write':write,'approval':approval,'healthchecks.url':heartbeat_file,**notification_files}
                 return SimpleNamespace(returncode=int(unreadable is not None and args[-1] == str(private_files[unreadable])))
             raise AssertionError('unexpected privileged command')
         def write_owned(path, data, marker, permissions): mutations[str(path)] = data
@@ -127,7 +129,7 @@ class DeploymentTests(unittest.TestCase):
             stack.enter_context(patch.object(installer.subprocess, 'run', run))
             yield SimpleNamespace(config=config_path, raw=raw, marker=marker, mutations=mutations,
                                   checks=checks, commands=commands, write=write, approval=approval,
-                                  notification_files=notification_files)
+                                  notification_files=notification_files, heartbeat_file=heartbeat_file)
 
     def test_all_native_notification_files_are_protected_and_service_readable_before_install(self):
         for unreadable in (None,'slack.url','discord.url','bot.token','chat.id','smtp.json'):
@@ -158,6 +160,21 @@ class DeploymentTests(unittest.TestCase):
             self.assertIn(str(fixture.write), readable)
             self.assertIn(str(fixture.approval), readable)
             self.assertEqual(fixture.commands, [('systemctl', 'daemon-reload')])
+
+    def test_configured_healthchecks_secret_must_be_service_readable(self):
+        for unreadable in (None, 'healthchecks.url'):
+            with self.subTest(unreadable=unreadable), self.installation(mode='observe', unreadable=unreadable) as fixture:
+                secret = fixture.heartbeat_file
+                fixture.raw['healthchecks_ping_url_file'] = str(secret)
+                fixture.config.write_text(json.dumps(fixture.raw), encoding='utf-8')
+                if unreadable:
+                    with self.assertRaises(self.installer.InstallError):
+                        self.installer.install(fixture.config)
+                    self.assertEqual(fixture.mutations, {})
+                else:
+                    self.installer.install(fixture.config)
+                    self.assertIn(str(secret), {args[-1] for args in fixture.checks if args[0] == 'runuser'})
+                    self.assertNotIn(str(secret), fixture.mutations)
 
     def test_mixed_enforcement_install_keeps_warning_only_resource_without_writer(self):
         with self.installation() as fixture:

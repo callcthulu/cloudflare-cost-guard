@@ -235,6 +235,8 @@ def install(config_path, *, allow_enforce=False):
         raise InstallError('state_dir must match protected service state directory')
     secrets = [account.read_token_file for account in config.accounts]
     secrets.extend(notification_secret_files(config.notification))
+    if config.healthchecks_ping_url_file is not None:
+        secrets.append(config.healthchecks_ping_url_file)
     if allow_enforce:
         for resource in cutoff_resources:
             secrets.extend((resource.executor_token_file, resource.approved_manifest_file))
