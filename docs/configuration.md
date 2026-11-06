@@ -53,6 +53,7 @@ local labels; neither selects a provider resource.
 | `state_dir` | Absolute path, default `/var/lib/cloudflare-cost-guard`; installer requires this exact path. |
 | `run_timeout_seconds` | Integer 1–299, default 240. systemd still imposes 240 seconds; keep this at or below 240. |
 | `heartbeat_max_age_seconds` | Integer 301–86400, default 660. Detects gaps when a later run occurs; cannot detect a stopped host alone. |
+| `healthchecks_ping_url_file` | Optional absolute path to a protected file holding the UUID-based Healthchecks.io ping URL. See [scheduled heartbeats](runbook.md#healthchecksio-completion-signals). |
 | `notification` | Omitted/null initially. Otherwise 1–16 explicit `targets` or the legacy external HTTPS `url_file`; optional `max_attempts` 1–10 globally per run, default 3. |
 
 Each account requires `key`, `account_id`, `read_token_file`, `billing_day`,

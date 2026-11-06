@@ -100,6 +100,38 @@ full coverage or enforcement readiness from an enabled timer, HTTP 2xx, offline
 tests or these observe gates. Nonzero incident exits can mark the service failed;
 the timer continues scheduling. See [troubleshooting](troubleshooting.md).
 
+### Healthchecks.io completion signals
+
+For an existing Healthchecks.io check intended to track scheduled run completion,
+put its base UUID ping URL in a protected file such as
+`/etc/cloudflare-cost-guard/secrets/healthchecks.url`. The managed installer
+requires a regular file owned by root and the service group with mode `0640`.
+Set `healthchecks_ping_url_file` to that absolute path in the protected **source**
+JSON and use the managed update below. Keep the URL out of command lines, unit
+files, source control and logs. If a separate heartbeat script is already in
+use, identify it and compare its success criteria before replacing it. Use one
+sender per check. The installer refuses existing service or timer drop-ins.
+Review any local override before migrating the sender.
+
+The supplied service calls `run --scheduled`. With the optional file configured,
+the runner writes its normal JSON report to the journal, then POSTs an empty
+body to the base ping URL. The signal means a run reached its normal completion
+path with no account-level `collection_failed` decision. It can accompany policy
+warnings, pending notifications or unknown coverage for specific billing and
+analytics sources. Continue checking collection freshness and notification health
+separately. Configuration, lock, runtime and deadline failures send no success.
+Manual CLI runs without `--scheduled`, probes, previews and status reads send no
+heartbeat.
+
+Transport has a 12-second Linux deadline inside the existing service deadline and
+at most one retry for transient errors. The journal records `healthchecks heartbeat:`
+and a sanitized outcome separately from the guard exit code. Keep a Simple
+Schedule with a five-minute period for the stock timer. Compare actual completion
+times and gaps in the Healthchecks event log before adjusting grace time.
+Verify at least two consecutive timer-triggered completions and matching accepted
+pings, then review the 24-hour record for gaps. Do not force a manual run of
+an armed service for this check.
+
 ## Configuration updates, upgrades and token rotation
 
 For optional Worker cutoff, follow [the arming procedure](automatic-cutoff.md#arm-and-preview).

@@ -212,7 +212,8 @@ def load_config(path: Path) -> Config:
                          parse_constant=lambda _: (_ for _ in ()).throw(ConfigError("invalid JSON constant")))
     except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
         raise ConfigError("cannot read valid JSON configuration") from None
-    raw = _object(raw, {"mode", "accounts", "resources", "state_dir", "notification", "run_timeout_seconds", "heartbeat_max_age_seconds"}, {"accounts"})
+    raw = _object(raw, {"mode", "accounts", "resources", "state_dir", "notification",
+                        "run_timeout_seconds", "heartbeat_max_age_seconds", "healthchecks_ping_url_file"}, {"accounts"})
     mode = raw.get("mode", "observe")
     if not isinstance(mode, str) or mode not in {"observe", "enforce"}: raise ConfigError("invalid mode")
     if not isinstance(raw["accounts"], list) or not raw["accounts"]: raise ConfigError("at least one account required")
@@ -282,5 +283,7 @@ def load_config(path: Path) -> Config:
     notification = raw.get("notification")
     if notification is not None:
         notification = _notification(notification)
+    healthchecks_file = raw.get("healthchecks_ping_url_file")
     return Config(mode, tuple(accounts), tuple(resources), _path(raw.get("state_dir", "/var/lib/cloudflare-cost-guard")), notification,
-                  _integer(raw.get("run_timeout_seconds", 240), 1, 299), _integer(raw.get("heartbeat_max_age_seconds", 660), 301, 86400))
+                  _integer(raw.get("run_timeout_seconds", 240), 1, 299), _integer(raw.get("heartbeat_max_age_seconds", 660), 301, 86400),
+                  _path(healthchecks_file) if healthchecks_file is not None else None)

@@ -16,7 +16,7 @@ from pathlib import Path
 from .config import ConfigError, load_config
 from .config import billing_window
 from .models import Decision, RatedCharge, ResourceKey, Snapshot
-from .notify import deliver
+from .notify import deliver, ping_healthchecks
 from .policy import evaluate
 from .state import Locked, RunLock, Store, encode, resource_label
 
@@ -350,7 +350,10 @@ def main(argv=None):
                         help='status only: include private local resource mapping; do not share output')
     parser.add_argument('--target', help='test-notification only: exact configured target ID')
     parser.add_argument('--send', action='store_true', help='test-notification only: send one synthetic notification')
+    parser.add_argument('--scheduled', action='store_true',
+                        help='run only: enable the configured Healthchecks completion signal')
     args = parser.parse_args(argv)
+    heartbeat_file = None
     try:
         config = load_config(args.config)
         if args.show_identities and args.command != 'status':
@@ -359,6 +362,8 @@ def main(argv=None):
             raise ConfigError('output is a prepare-cutoff-only option')
         if (args.target is not None or args.send) and args.command != 'test-notification':
             raise ConfigError('notification test flags require test-notification')
+        if args.scheduled and args.command != 'run':
+            raise ConfigError('scheduled flag requires run')
         if args.command == 'validate':
             report, code = {'valid': True, 'mode': config.mode, 'accounts': len(config.accounts),
                             'resources': len(config.resources)}, 0
@@ -376,6 +381,8 @@ def main(argv=None):
             code = 0 if report.get('preview') or report.get('accepted') else 5
         elif args.command in ('run', 'probe', 'enforce-preview'):
             code, report = run_once(config, probe=args.command == 'probe', preview=args.command == 'enforce-preview')
+            if args.scheduled:
+                heartbeat_file = config.healthchecks_ping_url_file
         elif args.command == 'prepare-cutoff':
             report, code = _prepare_cutoff(config, args), 0
         else:
@@ -419,7 +426,19 @@ def main(argv=None):
         report, code = {'error': 'run_deadline_exceeded', 'collection': 'unknown'}, 3
     except (sqlite3.Error, OSError, ValueError, TypeError, KeyError):
         report, code = {'error': 'runtime_failure'}, 3
-    print(json.dumps(report, sort_keys=True, allow_nan=False, indent=2 if args.command == 'show-policy' else None))
+    print(json.dumps(report, sort_keys=True, allow_nan=False,
+                     indent=2 if args.command == 'show-policy' else None), flush=True)
+    if heartbeat_file is not None:
+        if any(decision['reason_code'] == 'collection_failed'
+               for account in report['accounts'] for decision in account['decisions']):
+            outcome = 'skipped_collection_failed'
+        else:
+            try:
+                with time_budget(12):
+                    outcome = ping_healthchecks(heartbeat_file)
+            except RunDeadline:
+                outcome = 'transport_deadline'
+        print(f'healthchecks heartbeat: {outcome}', file=sys.stderr)
     return code
 
 

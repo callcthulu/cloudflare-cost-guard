@@ -7,6 +7,8 @@ import re
 import smtplib
 import ssl
 import stat
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from email.message import EmailMessage
@@ -70,6 +72,34 @@ def _post(url, body):
     req = urllib.request.Request(url, body, {'Content-Type': 'application/json'}, method='POST')
     with opener.open(req, timeout=5) as response:
         return response.status
+
+
+def ping_healthchecks(url_file):
+    """Report a completed run to a single approved check without sending run data."""
+    try:
+        url = _destination(url_file)
+        if not re.fullmatch(r'https://hc-ping\.com/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', url):
+            return 'invalid_destination'
+    except (OSError, ValueError):
+        return 'invalid_destination'
+
+    for attempt in range(2):
+        if attempt:
+            time.sleep(0.5)
+        try:
+            status = _post(url, b'')
+        except urllib.error.HTTPError as error:
+            status = error.code
+            error.close()
+        except (OSError, http.client.HTTPException):
+            outcome = 'transport_error'
+            continue
+        if status == 200:
+            return 'accepted'
+        outcome = f'http_{status}'
+        if status not in {408, 429, 500, 502, 503, 504}:
+            break
+    return outcome
 
 
 def _http_post(url, body):
